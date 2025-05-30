@@ -1,0 +1,74 @@
+{
+    "search_config": {
+        "description": "搜索引擎配置",
+        "type": "object",
+        "items": {
+            "google_cse_api_key": {
+                "description": "Google Custom Search API Key (可选)",
+                "type": "string",
+                "hint": "用于调用Google自定义搜索API"
+            },
+            "google_cse_cx": {
+                "description": "Google Custom Search Engine ID (可选)",
+                "type": "string",
+                "hint": "用于指定您的Google自定义搜索引擎"
+            },
+            "news_api_key": {
+                "description": "News API Key (可选)",
+                "type": "string",
+                "hint": "用于调用NewsAPI服务"
+            },
+            "academic_search_api_key": {
+                "description": "学术搜索API Key (可选)",
+                "type": "string",
+                "hint": "例如 Semantic Scholar API Key"
+            }
+        }
+    },
+    "llm_config": {
+        "description": "LLM模型行为配置",
+        "type": "object",
+        "items": {
+            "llm_model_name": {
+                "description": "用于深度研究的LLM模型名称 (可选)",
+                "type": "string",
+                "hint": "如果为空，则使用AstrBot默认配置的LLM"
+            },
+            "max_document_chunk_size": {
+                "description": "文档切块最大字符数",
+                "type": "int",
+                "default": 4000,
+                "hint": "超大文档将被切分为此大小的文本块"
+            },
+            "min_doc_for_chunking": {
+                "description": "触发文档切块的最小字符数",
+                "type": "int",
+                "default": 6000,
+                "hint": "小于此大小的文档将不进行切块处理"
+            }
+        }
+    },
+    "output_config": {
+        "description": "报告输出配置",
+        "type": "object",
+        "items": {
+            "default_output_format": {
+                "description": "默认报告输出格式",
+                "type": "string",
+                "default": "md",
+                "options": [
+                    "md",
+                    "html",
+                    "image"
+                ],
+                "hint": "当用户未指定格式时，默认输出的格式"
+            },
+            "temp_storage_duration_hours": {
+                "description": "临时文件链接有效时长 (小时)",
+                "type": "int",
+                "default": 24,
+                "hint": "生成的文件链接将在指定小时后失效"
+            }
+        }
+    }
+}
