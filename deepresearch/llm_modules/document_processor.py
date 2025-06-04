@@ -113,8 +113,8 @@ class DocumentProcessor(BaseLLMModule):
 ```
 请确保输出严格符合JSON格式，不要包含任何额外文字，例如：
 {{
-  "key_points": ["观点1", "观点2"],
-  "supporting_quotes": ["原文引用1...", "原文引用2..."]
+    "key_points": ["观点1", "观点2"],
+    "supporting_quotes": ["原文引用1...", "原文引用2..."]
 }}
 """
                 try:

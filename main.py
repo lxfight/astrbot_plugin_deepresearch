@@ -1,21 +1,18 @@
 import asyncio
-import uuid
-from typing import Dict, List, Any
+
+from typing import Dict
 
 import astrbot.api.star as star
 import astrbot.api.event.filter as filter
-from astrbot.api.event import AstrMessageEvent, MessageEventResult
+from astrbot.api.event import AstrMessageEvent
 from astrbot.api import (
     logger,
     AstrBotConfig,
 )
 
 # 导入自定义的数据模型和任务管理器
-from deepresearch.data_models import UserResearchQuery, ResearchReport, DeepResearchTask
+from deepresearch.data_models import UserResearchQuery
 from deepresearch.task_manager import TaskManager
-from deepresearch.output_formatter.report_formatter import (
-    ReportFormatter,
-)  # 仅用于dr.output指令
 
 
 @star.register(
@@ -23,13 +20,13 @@ from deepresearch.output_formatter.report_formatter import (
     desc="让 LLM 具有 deepresearch 能力，进行多源信息检索、内容筛选、深度分析与报告生成。",
     author="lxfight",
     version="1.919.810",
-    repo="https://github.com/your_username/astrbot-deepresearch",  # 替换为您的实际仓库地址
+    repo="https://github.com/lxfight/astrbot_plugin_deepresearch",
 )
 class DeepResearch(star.Star):
     """开发版 deepresearch 插件，提供深度研究能力"""
 
     def __init__(self, context: star.Context, config: AstrBotConfig) -> None:
-        super().__init__(context)  # 确保调用基类的 __init__
+        super().__init__(context)
         self.config = config
         self.logger = logger
         self.task_manager = TaskManager(context, config)

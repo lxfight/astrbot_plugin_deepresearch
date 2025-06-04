@@ -1,6 +1,5 @@
 from astrbot.api import star, logger, AstrBotConfig
-from astrbot.api.event import AstrMessageEvent
-from typing import List, Dict, Optional, Any
+
 
 
 class BaseModule:

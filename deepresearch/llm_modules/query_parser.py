@@ -30,14 +30,14 @@ class QueryParser(BaseLLMModule):
 
 请确保输出严格符合JSON格式，不要包含任何额外文字，例如：
 {{
-  "extracted_keywords": ["..."],
-  "expanded_terms": ["..."],
-  "identified_sub_topics": ["...", "..."],
-  "planned_search_queries": {{
-    "web": ["...", "..."],
-    "academic": ["...", "..."],
-    "news": ["...", "..."]
-  }}
+    "extracted_keywords": ["..."],
+    "expanded_terms": ["..."],
+    "identified_sub_topics": ["...", "..."],
+    "planned_search_queries": {{
+        "web": ["...", "..."],
+        "academic": ["...", "..."],
+        "news": ["...", "..."]
+    }}
 }}
 """
         try:
