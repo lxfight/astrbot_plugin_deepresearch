@@ -2,9 +2,11 @@ from pathlib import Path
 from typing import Optional
 import aiofiles  # 用于异步文件写入
 
+from astrbot.api.star import StarTools
 from astrbot.api import star, logger, AstrBotConfig
-from deepresearch.base_module import BaseModule
-from deepresearch.utils import Utils
+from ..base_module import BaseModule
+from ..utils import Utils
+from ..constants import PLUGIN_NAME
 
 
 class FileManager(BaseModule):
@@ -14,16 +16,9 @@ class FileManager(BaseModule):
 
     def __init__(self, context: star.Context, config: AstrBotConfig):
         super().__init__(context, config)
-        self.plugin_data_dir = (
-            Path(self.context.get_data_dir())
-            / "plugins"
-            / "astrbot_deepresearch"
-            / "files"
-        )
+        self.plugin_data_dir = Path(StarTools.get_data_dir(PLUGIN_NAME)) / "files"
         self.plugin_data_dir.mkdir(parents=True, exist_ok=True)  # 确保插件文件目录存在
-        logger.info(
-            f"FileManager 模块初始化完成。文件存储路径: {self.plugin_data_dir}"
-        )
+        logger.info(f"FileManager 模块初始化完成。文件存储路径: {self.plugin_data_dir}")
 
     async def save_text_as_file(
         self, text_content: str, desired_filename: Optional[str] = None

@@ -1,9 +1,9 @@
 from typing import Dict, Optional, Literal
 
 from astrbot.api import star, AstrBotConfig
-from deepresearch.base_module import BaseModule
-from deepresearch.retrieval.base_retriever import BaseRetriever
-from deepresearch.retrieval.retriever_registry import RetrieverRegistry
+from ..base_module import BaseModule
+from .base_retriever import BaseRetriever
+from .retriever_registry import RetrieverRegistry
 
 
 class RetrieverFactory(BaseModule):

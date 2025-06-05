@@ -1,8 +1,8 @@
 import json
 
 from astrbot.api import star,logger, AstrBotConfig
-from deepresearch.llm_modules.base_llm_module import BaseLLMModule
-from deepresearch.data_models import UserResearchQuery, QueryAnalysisResult
+from .base_llm_module import BaseLLMModule
+from ..data_models import UserResearchQuery, QueryAnalysisResult
 
 
 class QueryParser(BaseLLMModule):

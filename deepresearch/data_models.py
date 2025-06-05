@@ -63,9 +63,9 @@ class RetrievedItem:
     """
 
     url: str  # 信息的URL
+    source_type: Literal["web", "academic", "news", "custom"]  # 信息来源类型
     title: Optional[str] = None  # 网页标题
     snippet: Optional[str] = None  # 搜索结果摘要或内容片段
-    source_type: Literal["web", "academic", "news", "custom"]  # 信息来源类型
     retrieval_time: datetime = field(default_factory=datetime.now)  # 获取时间
     raw_source_data: Optional[Any] = None  # 原始API返回数据，方便调试
 

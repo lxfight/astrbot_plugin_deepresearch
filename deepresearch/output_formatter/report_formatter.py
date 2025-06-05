@@ -3,8 +3,8 @@ from typing import Union
 
 from astrbot.api import star, logger, AstrBotConfig
 # from astrbot.api.star import Context  # 导入 Context 以便调用 html_render
-from deepresearch.base_module import BaseModule
-from deepresearch.data_models import ResearchReport
+from ..base_module import BaseModule
+from ..data_models import ResearchReport
 
 
 class ReportFormatter(BaseModule):

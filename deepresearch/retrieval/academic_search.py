@@ -2,9 +2,9 @@ import aiohttp
 from typing import List, Dict, Any
 
 from astrbot.api import star, logger, AstrBotConfig
-from deepresearch.retrieval.base_retriever import BaseRetriever
-from deepresearch.retrieval.retriever_registry import register_retriever  # 导入注册器
-from deepresearch.data_models import RetrievedItem
+from .base_retriever import BaseRetriever
+from .retriever_registry import register_retriever  # 导入注册器
+from ..data_models import RetrievedItem
 
 
 @register_retriever("academic")  # 注册为 "academic" 类型检索器

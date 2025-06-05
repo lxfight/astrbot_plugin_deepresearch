@@ -2,9 +2,9 @@ import json
 from typing import Tuple
 
 from astrbot.api import star, logger, AstrBotConfig
-from deepresearch.llm_modules.base_llm_module import BaseLLMModule
-from deepresearch.data_models import QueryAnalysisResult, RetrievedItem
-from deepresearch.utils import Utils
+from .base_llm_module import BaseLLMModule
+from ..data_models import QueryAnalysisResult, RetrievedItem
+from ..utils import Utils
 
 
 class ContentSelector(BaseLLMModule):

@@ -2,8 +2,8 @@ import json
 from typing import List
 
 from astrbot.api import star,logger, AstrBotConfig
-from deepresearch.llm_modules.base_llm_module import BaseLLMModule
-from deepresearch.data_models import (
+from .base_llm_module import BaseLLMModule
+from ..data_models import (
     UserResearchQuery,
     QueryAnalysisResult,
     SubTopicSynthesis,

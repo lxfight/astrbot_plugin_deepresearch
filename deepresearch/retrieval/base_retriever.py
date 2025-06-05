@@ -2,10 +2,10 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Literal
 
 from astrbot.api import star, AstrBotConfig
-from deepresearch.base_module import BaseModule
-from deepresearch.data_models import RetrievedItem
+from ..base_module import BaseModule
+from ..data_models import RetrievedItem
 
-# from deepresearch.retrieval.retriever_registry import register_retriever
+# from .retriever_registry import register_retriever
 
 
 class BaseRetriever(BaseModule, ABC):

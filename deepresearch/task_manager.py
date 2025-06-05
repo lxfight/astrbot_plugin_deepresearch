@@ -8,7 +8,7 @@ from astrbot.api.event import AstrMessageEvent, MessageEventResult
 from astrbot.api.message_components import Plain, Image
 
 # 导入所有需要协调的模块
-from deepresearch.data_models import (
+from .data_models import (
     UserResearchQuery,
     QueryAnalysisResult,
     RetrievedItem,
@@ -20,18 +20,18 @@ from deepresearch.data_models import (
     ResearchReport,
     DeepResearchTask,
 )
-from deepresearch.llm_modules.query_parser import QueryParser
-from deepresearch.llm_modules.content_selector import ContentSelector
-from deepresearch.llm_modules.document_processor import DocumentProcessor
-from deepresearch.llm_modules.report_generator import ReportGenerator
-from deepresearch.retrieval.retriever_factory import RetrieverFactory
+from .llm_modules.query_parser import QueryParser
+from .llm_modules.content_selector import ContentSelector
+from .llm_modules.document_processor import DocumentProcessor
+from .llm_modules.report_generator import ReportGenerator
+from .retrieval.retriever_factory import RetrieverFactory
 
 # from deepresearch.retrieval.custom_db_adapter import CustomDBAdapter # 如果有的话
-from deepresearch.content_processing.html_extractor import HTMLExtractor
-from deepresearch.output_formatter.report_formatter import (
+from .content_processing.html_extractor import HTMLExtractor
+from .output_formatter.report_formatter import (
     ReportFormatter,
 )  # 包含md转html和html渲染图片
-from deepresearch.output_formatter.file_manager import FileManager
+from .output_formatter.file_manager import FileManager
 
 
 class TaskManager:

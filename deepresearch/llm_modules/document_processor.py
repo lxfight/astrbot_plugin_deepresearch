@@ -3,14 +3,14 @@ from typing import List, Dict, Any
 from collections import defaultdict
 
 from astrbot.api import star,logger, AstrBotConfig
-from deepresearch.llm_modules.base_llm_module import BaseLLMModule
-from deepresearch.data_models import (
+from .base_llm_module import BaseLLMModule
+from ..data_models import (
     QueryAnalysisResult,
     ProcessedContent,
     SourceInsight,
     SubTopicSynthesis,
 )
-from deepresearch.utils import Utils
+from ..utils import Utils
 
 
 class DocumentProcessor(BaseLLMModule):

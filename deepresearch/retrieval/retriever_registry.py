@@ -1,7 +1,7 @@
 from typing import Dict, Type, Callable, Literal
 
 from astrbot.api import logger
-from deepresearch.retrieval.base_retriever import BaseRetriever
+from .base_retriever import BaseRetriever
 
 
 class RetrieverRegistry:

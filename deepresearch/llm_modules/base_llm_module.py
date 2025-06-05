@@ -1,5 +1,5 @@
 from astrbot.api import star, logger, provider, AstrBotConfig
-from deepresearch.base_module import BaseModule
+from ..base_module import BaseModule
 from typing import Optional, List, Dict
 
 

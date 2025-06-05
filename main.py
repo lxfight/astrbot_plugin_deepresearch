@@ -11,8 +11,8 @@ from astrbot.api import (
 )
 
 # 导入自定义的数据模型和任务管理器
-from deepresearch.data_models import UserResearchQuery
-from deepresearch.task_manager import TaskManager
+from .deepresearch.data_models import UserResearchQuery
+from .deepresearch.task_manager import TaskManager
 
 
 @star.register(

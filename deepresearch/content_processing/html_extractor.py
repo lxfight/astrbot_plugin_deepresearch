@@ -4,8 +4,8 @@ from typing import Optional
 from readability import Document
 
 from astrbot.api import star, logger, AstrBotConfig
-from deepresearch.base_module import BaseModule
-from deepresearch.utils import Utils
+from ..base_module import BaseModule
+from ..utils import Utils
 
 
 class HTMLExtractor(BaseModule):
