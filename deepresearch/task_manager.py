@@ -24,9 +24,7 @@ from deepresearch.llm_modules.query_parser import QueryParser
 from deepresearch.llm_modules.content_selector import ContentSelector
 from deepresearch.llm_modules.document_processor import DocumentProcessor
 from deepresearch.llm_modules.report_generator import ReportGenerator
-from deepresearch.retrieval.web_search import WebSearchRetriever
-from deepresearch.retrieval.news_api import NewsAPIRetriever
-from deepresearch.retrieval.academic_search import AcademicSearchRetriever
+from deepresearch.retrieval.retriever_factory import RetrieverFactory
 
 # from deepresearch.retrieval.custom_db_adapter import CustomDBAdapter # 如果有的话
 from deepresearch.content_processing.html_extractor import HTMLExtractor
@@ -56,9 +54,9 @@ class TaskManager:
         self.content_selector = ContentSelector(context, config)
         self.document_processor = DocumentProcessor(context, config)
         self.report_generator = ReportGenerator(context, config)
-        self.web_search_retriever = WebSearchRetriever(context, config)
-        self.news_api_retriever = NewsAPIRetriever(context, config)
-        self.academic_search_retriever = AcademicSearchRetriever(context, config)
+
+        self.retriever_factory = RetrieverFactory(context, config)
+
         self.html_extractor = HTMLExtractor(context, config)
         self.report_formatter = ReportFormatter(context, config)
         self.file_manager = FileManager(context, config)
@@ -102,32 +100,38 @@ class TaskManager:
                 f"✅ 任务 `{task.task_id[:8]}`：问题解析完成。识别出 {len(query_analysis_result.identified_sub_topics)} 个子主题。"
             )
 
-            # 阶段2: 多源信息检索
+            # 阶段2: 多源信息检索 - 使用工厂模式
             task.update_status("retrieving_sources")
             await event.send(
-                f"🔍 任务 `{task.task_id[:8]}`：正在从多源（网络、新闻、学术）检索信息..."
+                f"🔍 任务 `{task.task_id[:8]}`：正在从多源（网络、新闻、学术等）检索信息..."
             )
             all_retrieved_items: List[RetrievedItem] = []
-            if query_analysis_result.planned_search_queries.get("web"):
-                for query in query_analysis_result.planned_search_queries["web"]:
-                    all_retrieved_items.extend(
-                        await self.web_search_retriever.search(
-                            query, self.config.get("search_config", {})
-                        )
+
+            # 获取所有可用的检索器
+            available_retrievers = self.retriever_factory.get_available_retrievers()
+            self.logger.info(f"可用检索器类型：{list(available_retrievers.keys())}")
+            # TODO
+            search_config = self.config.get("search_config", {})
+
+            for (
+                source_type,
+                queries,
+            ) in query_analysis_result.planned_search_queries.items():
+                if not queries:
+                    continue  # 没有为该来源生成查询词
+
+                retriever = available_retrievers.get(source_type)
+                if retriever:
+                    self.logger.info(
+                        f"使用检索器 '{retriever.__class__.__name__}' 进行 '{source_type}' 搜索。"
                     )
-            if query_analysis_result.planned_search_queries.get("news"):
-                for query in query_analysis_result.planned_search_queries["news"]:
-                    all_retrieved_items.extend(
-                        await self.news_api_retriever.search(
-                            query, self.config.get("search_config", {})
-                        )
-                    )
-            if query_analysis_result.planned_search_queries.get("academic"):
-                for query in query_analysis_result.planned_search_queries["academic"]:
-                    all_retrieved_items.extend(
-                        await self.academic_search_retriever.search(
-                            query, self.config.get("search_config", {})
-                        )
+                    for query in queries:
+                        self.logger.debug(f"执行 '{source_type}' 搜索: '{query}'")
+                        results = await retriever.search(query, search_config)
+                        all_retrieved_items.extend(results)
+                else:
+                    self.logger.warning(
+                        f"检索器类型 '{source_type}' 未配置或不可用，跳过该来源的搜索。"
                     )
 
             retrieval_output = RetrievalPhaseOutput(
@@ -148,23 +152,43 @@ class TaskManager:
             processed_contents: List[ProcessedContent] = []
             relevant_contents: List[ProcessedContent] = []
 
-            for item in retrieval_output.unique_retrieved_items:
-                extracted_text = await self.html_extractor.extract_text(item.url)
-                processed_item = ProcessedContent(
-                    retrieved_item=item,
-                    extracted_text=extracted_text,
-                    fetch_time=datetime.now(),
-                )
+            # 优化：并行抓取
+            fetch_tasks = [
+                self.html_extractor.extract_text(item.url)
+                for item in retrieval_output.unique_retrieved_items
+            ]
+            extracted_texts = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+            for i, item in enumerate(retrieval_output.unique_retrieved_items):
+                extracted_text = extracted_texts[i]
+                if isinstance(extracted_text, Exception):
+                    self.logger.warning(
+                        f"抓取或提取 '{item.url}' 失败: {extracted_text}"
+                    )
+                    processed_item = ProcessedContent(
+                        retrieved_item=item,
+                        processing_error=str(extracted_text),
+                        fetch_time=datetime.now(),
+                    )
+                else:
+                    processed_item = ProcessedContent(
+                        retrieved_item=item,
+                        extracted_text=extracted_text,
+                        fetch_time=datetime.now(),
+                    )
                 processed_contents.append(processed_item)
 
-                # LLM筛选相关性 (可以先抓取再筛选，也可以先筛选再抓取，这里选择先抓取再筛选)
-                is_relevant, score = await self.content_selector.check_relevance(
-                    query_analysis_result, item, extracted_text
-                )
-                processed_item.is_relevant = is_relevant
-                processed_item.relevance_score = score
-                if is_relevant:
-                    relevant_contents.append(processed_item)
+                # 仅对成功提取到文本的项进行相关性筛选
+                if processed_item.extracted_text:
+                    is_relevant, score = await self.content_selector.check_relevance(
+                        query_analysis_result, item, processed_item.extracted_text
+                    )
+                    processed_item.is_relevant = is_relevant
+                    processed_item.relevance_score = score
+                    if is_relevant:
+                        relevant_contents.append(processed_item)
+                else:
+                    processed_item.is_relevant = False  # 无法提取内容默认不相关
 
             task.processed_contents = processed_contents
             task.relevant_contents = relevant_contents
@@ -178,15 +202,20 @@ class TaskManager:
                 f"💡 任务 `{task.task_id[:8]}`：正在对文档进行深度分析与总结..."
             )
 
-            source_insights: List[SourceInsight] = []
+            # 并行处理每个相关文档的洞察提取
+            insight_tasks = []
             for doc in relevant_contents:
-                if doc.extracted_text:
-                    insights = (
-                        await self.document_processor.process_and_summarize_document(
-                            query_analysis_result, doc
-                        )
+                insight_tasks.append(
+                    self.document_processor.process_and_summarize_document(
+                        query_analysis_result, doc
                     )
-                    source_insights.extend(insights)
+                )
+
+            # 展平列表的列表
+            list_of_lists_of_insights = await asyncio.gather(*insight_tasks)
+            source_insights: List[SourceInsight] = [
+                insight for sublist in list_of_lists_of_insights for insight in sublist
+            ]
             task.source_insights = source_insights
 
             # 按子主题聚合和综合
