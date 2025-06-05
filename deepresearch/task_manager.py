@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from datetime import datetime
 
 from astrbot.api import star, logger, AstrBotConfig
@@ -110,8 +110,9 @@ class TaskManager:
             # 获取所有可用的检索器
             available_retrievers = self.retriever_factory.get_available_retrievers()
             self.logger.info(f"可用检索器类型：{list(available_retrievers.keys())}")
-            # TODO
-            search_config = self.config.get("search_config", {})
+
+            # 从配置中提取搜索配置
+            search_config = self._extract_complete_search_config()
 
             for (
                 source_type,
@@ -127,8 +128,25 @@ class TaskManager:
                     )
                     for query in queries:
                         self.logger.debug(f"执行 '{source_type}' 搜索: '{query}'")
-                        results = await retriever.search(query, search_config)
-                        all_retrieved_items.extend(results)
+                        try:
+                            results = await retriever.search(query, search_config)
+                            # 确保结果符合RetrievedItem模型
+                            for result in results:
+                                if not hasattr(result, "source") or not result.source:
+                                    result.source = source_type
+                                if not hasattr(result, "metadata"):
+                                    result.metadata = {}
+                                # 添加查询信息到元数据
+                                result.metadata["original_query"] = query
+                                result.metadata["retriever_type"] = (
+                                    retriever.__class__.__name__
+                                )
+
+                            all_retrieved_items.extend(results)
+                        except Exception as e:
+                            self.logger.error(
+                                f"搜索'{query}'时出错: {e}", exc_info=True
+                            )
                 else:
                     self.logger.warning(
                         f"检索器类型 '{source_type}' 未配置或不可用，跳过该来源的搜索。"
@@ -275,33 +293,32 @@ class TaskManager:
                 md_content = report.get_full_markdown_content()
                 # 考虑报告过长时保存为文件并提供链接
                 if len(md_content) > 2000:  # 假设消息最大长度
-                    file_url = await self.file_manager.save_text_as_file(
-                        md_content, f"deep_research_report_{task_id}.md"
+                    file_info = await self.file_manager.save_text_as_file(
+                        md_content, f"deep_research_report_{task_id[:8]}.md", "md"
                     )
-                    await event.send(f"报告Markdown文件已上传至临时存储：{file_url}")
+                    await event.send(
+                        f"📄 报告Markdown文件已生成：{file_info['file_url']}"
+                    )
                 else:
                     await event.send(f"```markdown\n{md_content}\n```")
             elif format_type.lower() == "html":
                 html_content = await self.report_formatter.format_report(report, "html")
-                file_url = await self.file_manager.save_text_as_file(
-                    html_content, f"deep_research_report_{task_id}.html"
+                file_info = await self.file_manager.save_text_as_file(
+                    html_content, f"deep_research_report_{task_id[:8]}.html", "html"
                 )
-                await event.send(f"报告HTML网页已上传至临时存储：{file_url}")
-                await event.send(
-                    "[点击查看交互式报告](TODO_INTERACTIVE_REPORT_URL)"
-                )  # 交互式报告需要部署前端
+                await event.send(f"🌐 报告HTML网页已生成：{file_info['file_url']}")
             elif format_type.lower() == "image":
                 image_url = await self.report_formatter.format_report(report, "image")
-                await event.send("报告图片已生成：")
+                await event.send("🖼️ 报告图片已生成：")
                 await event.send(MessageEventResult(chain=[Image.fromURL(image_url)]))
             else:
-                await event.send(f"暂不支持的报告格式：`{format_type}`。")
+                await event.send(f"❌ 暂不支持的报告格式：`{format_type}`")
         except Exception as e:
             self.logger.error(
                 f"发送报告输出失败 (任务 {task_id}, 格式 {format_type}): {e}",
                 exc_info=True,
             )
-            await event.send(f"发送报告失败，请联系管理员。错误：{e}")
+            await event.send(f"❌ 发送报告失败，请联系管理员。错误：{e}")
 
     def get_task_status(self, task_id: str) -> Optional[DeepResearchTask]:
         """根据任务ID获取任务状态。"""
@@ -319,3 +336,52 @@ class TaskManager:
             # 根据需求，可以选择保留已完成/失败的任务数据一段时间，或者立即删除
             self.logger.info(f"任务 {task_id} 已从活跃任务列表中清理。")
             # del self.active_tasks[task_id] # 暂时不删除，方便用户查询历史状态
+
+    def _extract_complete_search_config(self) -> Dict[str, Any]:
+        """提取完整的搜索配置"""
+        search_config = {}
+
+        # 提取各种搜索引擎的配置
+        config_sections = [
+            "google_search",
+            "bing_search",
+            "serper_search",
+            "baidu_search",
+            "news_search",
+            "academic_search",
+        ]
+
+        for section in config_sections:
+            section_config = self.config.get(section, {})
+            for key, value in section_config.items():
+                # 构建统一的配置键名
+                if section == "google_search":
+                    if key == "cse_api_key":
+                        search_config["google_cse_api_key"] = value
+                    elif key == "cse_cx":
+                        search_config["google_cse_cx"] = value
+                elif section == "bing_search":
+                    if key == "api_key":
+                        search_config["bing_api_key"] = value
+                    elif key == "endpoint":
+                        search_config["bing_endpoint"] = value
+                elif section == "serper_search":
+                    if key == "api_key":
+                        search_config["serper_api_key"] = value
+                elif section == "baidu_search":
+                    if key == "api_key":
+                        search_config["baidu_api_key"] = value
+                    elif key == "secret_key":
+                        search_config["baidu_secret_key"] = value
+                elif section == "news_search":
+                    if key == "news_api_key":
+                        search_config["news_api_key"] = value
+                elif section == "academic_search":
+                    if key == "semantic_scholar_api_key":
+                        search_config["academic_search_api_key"] = value
+
+        # 保持向后兼容性
+        old_search_config = self.config.get("search_config", {})
+        search_config.update(old_search_config)
+
+        return search_config

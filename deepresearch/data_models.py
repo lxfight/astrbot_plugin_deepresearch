@@ -69,8 +69,21 @@ class RetrievedItem:
     retrieval_time: datetime = field(default_factory=datetime.now)  # 获取时间
     raw_source_data: Optional[Any] = None  # 原始API返回数据，方便调试
 
+    # 新增字段以支持搜索引擎处理
+    metadata: Optional[Dict[str, Any]] = None  # 元数据字典，存储额外信息
+    content: Optional[str] = None  # 提取的完整内容（用于内容提取后存储）
+    relevance_score: float = 0.0  # 相关性评分
+    published_date: Optional[datetime] = None  # 发布时间
+    source: str = "unknown"  # 具体的搜索引擎来源标识
+
     def __post_init__(self):
-        logger.debug(f"检索到项目: URL='{self.url}', 类型='{self.source_type}'")
+        logger.debug(
+            f"检索到项目: URL='{self.url}', 类型='{self.source_type}', 来源='{self.source}'"
+        )
+
+        # 如果没有设置source，根据source_type设置默认值
+        if self.source == "unknown":
+            self.source = self.source_type
 
 
 @dataclass

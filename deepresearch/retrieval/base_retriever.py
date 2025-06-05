@@ -347,22 +347,24 @@ class BaseRetriever(BaseModule, ABC):
             if not result.url or not result.title:
                 continue
 
-            # 质量评分检查
-            quality_score = self._calculate_quality_score(result)
+            # 计算质量评分（如果没有relevance_score或需要重新计算）
+            if result.relevance_score == 0.0:
+                result.relevance_score = self._calculate_quality_score(result)
+
+            quality_score = result.relevance_score
             if quality_score < min_quality_score:
                 continue
 
-            # 添加质量评分到元数据
-            if not hasattr(result, "metadata") or result.metadata is None:
+            # 确保元数据存在
+            if not result.metadata:
                 result.metadata = {}
             result.metadata["quality_score"] = quality_score
+            result.metadata["filtered_at"] = datetime.now().isoformat()
 
             filtered_results.append(result)
 
-        # 按质量评分排序
-        filtered_results.sort(
-            key=lambda x: x.metadata.get("quality_score", 0), reverse=True
-        )
+        # 按相关性评分排序
+        filtered_results.sort(key=lambda x: x.relevance_score, reverse=True)
 
         return filtered_results
 
@@ -388,6 +390,10 @@ class BaseRetriever(BaseModule, ABC):
                 score += 0.3
             if len(result.snippet.split()) > 5:
                 score += 0.2
+
+        # 如果有已存在的相关性评分，考虑进去
+        if hasattr(result, "relevance_score") and result.relevance_score > 0:
+            score = (score * 0.7) + (result.relevance_score * 0.3)
 
         return min(score, 1.0)
 
