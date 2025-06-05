@@ -346,30 +346,5 @@
                 "default": 3
             }
         }
-    },
-    "debug_config": {
-        "description": "调试配置",
-        "type": "object",
-        "items": {
-            "enable_verbose_logging": {
-                "description": "启用详细日志",
-                "type": "bool",
-                "default": false,
-                "hint": "记录详细的搜索和处理过程"
-            },
-            "save_intermediate_results": {
-                "description": "保存中间结果",
-                "type": "bool",
-                "default": false,
-                "hint": "保存搜索和分析的中间结果用于调试"
-            },
-            "log_level": {
-                "description": "日志级别",
-                "type": "string",
-                "default": "INFO",
-                "options": ["DEBUG", "INFO", "WARNING", "ERROR"],
-                "hint": "控制日志输出的详细程度"
-            }
-        }
     }
 }
