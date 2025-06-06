@@ -1,7 +1,8 @@
 # coding: utf-8
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from astrbot.api import logger
+from .models import SearchQuery, SearchResponse
 
 
 class BaseSearchEngine(ABC):
@@ -46,14 +47,11 @@ class BaseSearchEngine(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def search(self, query: str, count: int = 10) -> List[Dict[str, str]]:
+    async def search(self, search_query: SearchQuery) -> SearchResponse:
         """
         执行异步搜索。
 
-        :param query: 搜索的关键词。
-        :param count: 期望返回的结果数量。
-        :return: 一个包含搜索结果的列表。每个结果是一个字典，
-                至少应包含 'title', 'link', 'snippet' 三个键。
-                例如: [{'title': '标题', 'link': 'http://...', 'snippet': '摘要...'}]
+        :param search_query: 一个包含查询详情的 SearchQuery 对象。
+        :return: 一个包含搜索结果和元数据的 SearchResponse 对象。
         """
         raise NotImplementedError
