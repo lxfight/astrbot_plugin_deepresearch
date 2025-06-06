@@ -1,4 +1,0 @@
-httpx
-beautifulsoup4
-markdown2
-tavily-python
