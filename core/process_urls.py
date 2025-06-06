@@ -106,7 +106,6 @@ class SearchResultsProcessor:
             tasks = [self._process_single_item_async(session, item) for item in results]
             processed_results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # 处理gather可能捕获到的异常（虽然我们内部已经处理了大部分）
             final_results = []
             for i, result in enumerate(processed_results):
                 if isinstance(result, Exception):
