@@ -488,3 +488,22 @@ class BaseRetriever(BaseModule, ABC):
         self.reset_statistics()
         self.rate_limit_records.clear()
         self.logger.debug(f"{self.__class__.__name__} 资源已清理")
+
+    # 高级功能统一接口，子类可选择实现
+    async def search_by_site(self, query: str, site: str, api_config: Dict[str, Any]) -> List[RetrievedItem]:
+        """
+        站点内搜索（如支持）
+        """
+        raise NotImplementedError("该检索器未实现站点内搜索接口")
+
+    async def search_exact_phrase(self, phrase: str, api_config: Dict[str, Any]) -> List[RetrievedItem]:
+        """
+        精确短语搜索（如支持）
+        """
+        raise NotImplementedError("该检索器未实现精确短语搜索接口")
+
+    async def search_with_date_filter(self, query: str, api_config: Dict[str, Any], date_restrict: str = "m1") -> List[RetrievedItem]:
+        """
+        带日期过滤的搜索（如支持）
+        """
+        raise NotImplementedError("该检索器未实现日期过滤接口")

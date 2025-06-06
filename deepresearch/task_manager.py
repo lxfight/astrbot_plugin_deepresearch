@@ -107,12 +107,20 @@ class TaskManager:
             )
             all_retrieved_items: List[RetrievedItem] = []
 
-            # 获取所有可用的检索器
+            # 获取所有可用的检索器，按 priority 降序
             available_retrievers = self.retriever_factory.get_available_retrievers()
-            self.logger.info(f"可用检索器类型：{list(available_retrievers.keys())}")
+            retriever_items = list(available_retrievers.items())
+            # 按 priority 排序（已在 factory 层排序，这里冗余保证）
+            retriever_items.sort(
+                key=lambda kv: getattr(kv[1].__class__, "_registry_priority", 0), reverse=True
+            )
 
             # 从配置中提取搜索配置
             search_config = self._extract_complete_search_config()
+
+            # 检查 enabled 字段
+            news_enabled = self.config.get("news_search", {}).get("enabled", True)
+            academic_enabled = self.config.get("academic_search", {}).get("enabled", False)
 
             for (
                 source_type,
@@ -120,6 +128,12 @@ class TaskManager:
             ) in query_analysis_result.planned_search_queries.items():
                 if not queries:
                     continue  # 没有为该来源生成查询词
+
+                # 检查 enabled 字段
+                if source_type == "news" and not news_enabled:
+                    continue
+                if source_type == "academic" and not academic_enabled:
+                    continue
 
                 retriever = available_retrievers.get(source_type)
                 if retriever:
@@ -129,7 +143,8 @@ class TaskManager:
                     for query in queries:
                         self.logger.debug(f"执行 '{source_type}' 搜索: '{query}'")
                         try:
-                            results = await retriever.search(query, search_config)
+                            # 支持 fallback 策略：如果有多个检索器类型，依次尝试
+                            results = await retriever.search_with_fallback(query, search_config)
                             # 确保结果符合RetrievedItem模型
                             for result in results:
                                 if not hasattr(result, "source") or not result.source:

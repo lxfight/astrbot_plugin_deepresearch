@@ -54,6 +54,10 @@ class RetrieverFactory(BaseModule):
         # 获取配置
         search_config = self._extract_search_config()
 
+        # 检查 news_search、academic_search 的 enabled 字段
+        news_enabled = self.config.get("news_search", {}).get("enabled", True)
+        academic_enabled = self.config.get("academic_search", {}).get("enabled", False)
+
         # 按优先级顺序初始化检索器
         initialization_order = RetrieverRegistry.get_initialization_order()
         registry_classes = RetrieverRegistry.get_retriever_classes()
@@ -65,6 +69,14 @@ class RetrieverFactory(BaseModule):
             # 检查是否在启用列表中
             if not self._is_engine_enabled(source_type):
                 self.logger.info(f"检索器 '{source_type}' 未在启用列表中，跳过初始化")
+                continue
+
+            # 检查 enabled 字段
+            if source_type == "news" and not news_enabled:
+                self.logger.info("news_search 未启用，跳过初始化")
+                continue
+            if source_type == "academic" and not academic_enabled:
+                self.logger.info("academic_search 未启用，跳过初始化")
                 continue
 
             retriever_cls = registry_classes[source_type]
@@ -249,17 +261,76 @@ class RetrieverFactory(BaseModule):
     def get_available_retrievers(self) -> Dict[str, BaseRetriever]:
         """
         获取当前已实例化且配置有效的检索器字典。
-        键为 source_type，值为检索器实例。
+        按 priority 降序排序。
         """
-        return self._available_retrievers.copy()
+        # 按 priority 排序
+        retrievers = list(self._available_retrievers.items())
+        retrievers.sort(
+            key=lambda kv: getattr(kv[1].__class__, "_registry_priority", 0),
+            reverse=True,
+        )
+        return dict(retrievers)
 
-    def get_retriever(
-        self, source_type: Literal["web", "news", "academic", "custom"]
-    ) -> Optional[BaseRetriever]:
+    # 动态注册检索器
+    def register_retriever_dynamic(
+        self,
+        retriever_cls: type,
+        source_type: str,
+        alias: str = None,
+        priority: int = 0,
+    ) -> bool:
         """
-        根据来源类型获取特定的检索器实例。
+        动态注册新的检索器类
         """
-        return self._available_retrievers.get(source_type)
+        try:
+            RetrieverRegistry.register(source_type, alias, priority)(retriever_cls)
+            self.logger.info(
+                f"动态注册检索器 {retriever_cls.__name__} ({source_type}) 成功"
+            )
+            self.reload_retriever(source_type)
+            return True
+        except Exception as e:
+            self.logger.error(f"动态注册检索器失败: {e}")
+            return False
+
+    # 动态注销检索器
+    def unregister_retriever_dynamic(self, source_type: str) -> bool:
+        """
+        动态注销检索器
+        """
+        try:
+            RetrieverRegistry.unregister(source_type)
+            if source_type in self._available_retrievers:
+                del self._available_retrievers[source_type]
+            if source_type in self._failed_retrievers:
+                del self._failed_retrievers[source_type]
+            if source_type in self._retriever_health:
+                del self._retriever_health[source_type]
+            self.logger.info(f"动态注销检索器 {source_type} 成功")
+            return True
+        except Exception as e:
+            self.logger.error(f"动态注销检索器失败: {e}")
+            return False
+
+    def get_retriever_health(self, source_type: Optional[str] = None) -> Dict[str, Any]:
+        """获取检索器健康状态（对外接口）"""
+        if source_type:
+            return self._retriever_health.get(source_type, {})
+        return self._retriever_health.copy()
+
+    async def call_advanced_search(
+        self, source_type: str, method: str, *args, **kwargs
+    ):
+        """
+        统一调用高级接口（如 search_by_site、search_exact_phrase、search_with_date_filter）
+        """
+        retriever = self._available_retrievers.get(source_type)
+        if not retriever:
+            raise Exception(f"检索器 {source_type} 不可用")
+        if not hasattr(retriever, method):
+            raise Exception(f"检索器 {source_type} 不支持方法 {method}")
+        func = getattr(retriever, method)
+        return await func(*args, **kwargs)
 
     def get_failed_retrievers(self) -> Dict[str, str]:
         """获取初始化失败的检索器及失败原因"""

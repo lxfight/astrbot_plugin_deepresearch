@@ -312,6 +312,14 @@ class RetrieverRegistry:
         logger.info(f"检索器 '{source_type}' 已注销")
         return True
 
+    @classmethod
+    def get_priority(cls, source_type: str) -> int:
+        """获取检索器的优先级"""
+        metadata = cls._retrievers.get(source_type)
+        if metadata and hasattr(metadata.retriever_cls, "_registry_priority"):
+            return getattr(metadata.retriever_cls, "_registry_priority", 0)
+        return 0
+
 
 # 创建便捷的注册装饰器
 def register_retriever(
