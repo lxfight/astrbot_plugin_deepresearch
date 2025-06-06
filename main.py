@@ -26,3 +26,12 @@ class DeepResearchPlugin(Star):
 
     async def terminate(self):
         logger.info("DeepResearch插件已卸载")
+
+    @filter.command("dr", alias={"deepresearch", "深度研究"})
+    async def deep_research(
+        self, event: AstrMessageEvent, query: str
+    ) -> List[Tuple[str, str]]:
+        """
+        启动一个 deep research 任务
+        """
+        pass

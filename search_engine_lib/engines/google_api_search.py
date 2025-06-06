@@ -40,7 +40,7 @@ class GoogleApiSearch(BaseSearchEngine):
             logger.warning(f"[{self.name}] 注册失败：缺少或未配置 'cse_id'。")
             return False
 
-        logger.info(f"[{self.name}] 配置检查通过。")
+        logger.debug(f"[{self.name}] 配置检查通过。")
         return True
 
     async def search(self, search_query: SearchQuery) -> SearchResponse:

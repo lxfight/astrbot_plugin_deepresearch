@@ -30,7 +30,7 @@ class DuckDuckGoScrapeSearch(BaseSearchEngine):
 
     async def check_config(self) -> bool:
         """此引擎不需要特殊配置，因此总是返回 True。"""
-        logger.info(f"[{self.name}] 配置检查通过（无需特殊配置）。")
+        logger.debug(f"[{self.name}] 配置检查通过（无需特殊配置）。")
         return True
 
     async def search(self, search_query: SearchQuery) -> SearchResponse:

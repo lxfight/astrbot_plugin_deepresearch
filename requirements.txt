@@ -2,3 +2,4 @@ httpx
 aiohttp
 beautifulsoup4
 markdown2
+trafilatura
