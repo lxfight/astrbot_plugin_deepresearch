@@ -1,0 +1,5 @@
+name: astrbot_plugin_deepresearch
+author: lxfight
+version: 0.1.0
+description: 一个根据用户问题进行深度网络研究并生成报告的插件。
+repo: "https://github.com/lxfight/astrbot_plugin_deepresearch"

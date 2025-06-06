@@ -1,0 +1,4 @@
+httpx
+aiohttp
+beautifulsoup4
+markdown2

@@ -1,15 +1,23 @@
-from typing import List, Dict
-
-from astrbot.api import logger, AstrBotConfig
-from astrbot.api.event import filter, AstrMessageEvent, MessageChain
+from typing import List, Tuple
+from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
+from astrbot.api import logger, AstrBotConfig
+
+from .core.constants import (
+    PLUGIN_NAME,
+    PLUGIN_VERSION,
+    PLUGIN_DESCRIPTION,
+    PLUGIN_AUTHOR,
+    PLUGIN_REPO,
+)
+
 
 @register(
-    "astrbot_plugin_deepresearch",
-    "lxfight",
-    "一个实现深度研究的AI智能体插件",
-    "1.0.0",
-    "https://github.com/lxfight/astrbot_plugin_deepresearch",
+    PLUGIN_NAME,
+    PLUGIN_AUTHOR,
+    PLUGIN_DESCRIPTION,
+    PLUGIN_VERSION,
+    PLUGIN_REPO,
 )
 class DeepResearchPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
