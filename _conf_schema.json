@@ -1,0 +1,39 @@
+{
+    "max_search_results_per_term": {
+        "description": "每个搜索词最多获取的结果数",
+        "type": "int",
+        "hint": "阶段二中，对每个LLM生成的搜索词，调用搜索引擎时要求返回的结果数量。",
+        "default": 8
+    },
+    "max_terms_to_search": {
+        "description": "最多使用几个搜索词进行搜索",
+        "type": "int",
+        "hint": "阶段一LLM会生成多个搜索词，为控制API调用次数，限制实际用于搜索的词条数。",
+        "default": 20
+    },
+    "engine_config": {
+        "description": "各搜索引擎配置",
+        "type": "object",
+        "hint": "配置 search_engine_lib 初始化所需的参数",
+        "items": {
+            "google_api": {
+                "description": "Google Custom Search API 配置",
+                "type": "object",
+                "items": {
+                    "api_key": {
+                        "description": "Google API Key",
+                        "type": "string",
+                        "hint": "Google Cloud Console 获取的 API Key",
+                        "default": ""
+                    },
+                    "cse_id": {
+                        "description": "Google Custom Search Engine ID (CSE ID)",
+                        "type": "string",
+                        "hint": "Google Programmable Search Engine 页面获取的 CSE ID",
+                        "default": ""
+                    }
+                }
+            }
+        }
+    }
+}

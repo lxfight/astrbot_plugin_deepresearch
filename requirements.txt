@@ -1,5 +1,5 @@
-httpx
-aiohttp
+httpx[http2]
 beautifulsoup4
-markdown2
-trafilatura
+lxml
+markdown
+pydantic
