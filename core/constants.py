@@ -17,3 +17,5 @@ PLUGIN_VERSION = metadata.get("version", "0.1.0")
 PLUGIN_REPO = metadata.get(
     "repo", "https://github.com/lxfight/astrbot_plugin_deepresearch"
 )
+
+REQUEST_TIMEOUT_SECONDS = 30

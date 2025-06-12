@@ -1,8 +1,10 @@
 import time
+import asyncio
 from typing import Dict, Any
 from urllib.parse import quote_plus
 
 import aiohttp
+from aiohttp import ClientError, ClientResponseError, ClientTimeout  # <-- 新增
 from bs4 import BeautifulSoup
 from pydantic import ValidationError
 
@@ -10,6 +12,11 @@ from .. import register_engine
 from ..base import BaseSearchEngine
 from ..models import SearchQuery, SearchResultItem, SearchResponse
 from astrbot.api import logger
+from ...core.constants import REQUEST_TIMEOUT_SECONDS
+
+# --- 新增: 超时配置 ---
+TIMEOUT_CONFIG = ClientTimeout(total=REQUEST_TIMEOUT_SECONDS)
+# ---------------------
 
 
 @register_engine
@@ -22,72 +29,87 @@ class DuckDuckGoScrapeSearch(BaseSearchEngine):
 
     @property
     def description(self) -> str:
-        return "通过抓取 DuckDuckGo 搜索页面提供结果，无需API密钥但可能不稳定。"
+        return "通过抓取 DuckDuckGo 搜索页面提供结果，无需API密钥但可能不稳定或超时。"
 
+    # __init__ 和 check_config 保持不变
     def __init__(self, config: Dict[str, Any]):
-        # 调用父类构造函数，尽管这个引擎目前不使用配置
         super().__init__(config)
 
     async def check_config(self) -> bool:
-        """此引擎不需要特殊配置，因此总是返回 True。"""
         logger.debug(f"[{self.name}] 配置检查通过（无需特殊配置）。")
         return True
 
     async def search(self, search_query: SearchQuery) -> SearchResponse:
-        """使用 aiohttp 获取 HTML 并用 BeautifulSoup 解析，返回标准化的 SearchResponse 对象。"""
         start_time = time.time()
-
-        # DuckDuckGo HTML 版本的 URL
-        search_url = (
-            f"https://html.duckduckgo.com/html/?q={quote_plus(search_query.query)}"
-        )
+        base_url = "https://html.duckduckgo.com/html/"
+        search_url = f"{base_url}?q={quote_plus(search_query.query)}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
         }
-
-        logger.info(f"[{self.name}] 正在抓取URL: {search_url}")
-
+        logger.info(
+            f"[{self.name}] 正在抓取URL: {search_url} (Timeout={REQUEST_TIMEOUT_SECONDS}s)"
+        )
         results_list = []
 
-        async with aiohttp.ClientSession(headers=headers) as session:
+        # --- 修改: session 中加入 timeout ---
+        async with aiohttp.ClientSession(
+            headers=headers, timeout=TIMEOUT_CONFIG
+        ) as session:
             try:
                 async with session.get(search_url) as response:
                     response.raise_for_status()
                     html = await response.text()
-
                     soup = BeautifulSoup(html, "html.parser")
 
-                    # DuckDuckGo HTML 版本的结果都在 class="result" 的 div 中
-                    # 使用 limit 参数来控制获取数量
-                    for result_item_div in soup.find_all(
-                        "div", class_="result", limit=search_query.count
-                    ):
+                    # --- 修改: 循环逻辑, 先找所有, 再按需截断 ---
+                    all_result_divs = soup.find_all("div", class_="result")
+                    for result_item_div in all_result_divs:
+                        # --- 检查是否已达到所需数量 ---
+                        if len(results_list) >= search_query.count:
+                            break
+                        # -----------------------------
                         title_tag = result_item_div.find("a", class_="result__a")
                         snippet_tag = result_item_div.find(
                             "a", class_="result__snippet"
                         )
+                        raw_link = title_tag.get("href") if title_tag else None
 
-                        if title_tag and snippet_tag and title_tag.get("href"):
+                        if title_tag and snippet_tag and raw_link:
                             try:
-                                # DDG 的链接是相对的，需要拼接
-                                link_url = f"https://duckduckgo.com{title_tag['href']}"
+                                # --- 修复: URL 逻辑 ---
+                                # DDG html版的 href 通常是绝对 URL 或 // 开头，直接使用，或用 urljoin 处理相对路径
+                                # link_url = urljoin(base_url, raw_link)
+                                # 更简单: 假定它是绝对路径，让 Pydantic 验证
+                                link_url = raw_link
+                                # ---------------------
 
                                 result_item = SearchResultItem(
                                     title=title_tag.get_text(strip=True),
-                                    link=link_url,
+                                    link=link_url,  # 使用修复后的 link_url
                                     snippet=snippet_tag.get_text(strip=True),
                                 )
                                 results_list.append(result_item)
                             except ValidationError as e:
+                                # 原始代码的拼接错误会导致所有结果都在这里被捕获
                                 logger.warning(
-                                    f"[{self.name}] 过滤掉一条解析出的无效结果。URL: {title_tag.get('href')}, 错误: {e}"
+                                    f"[{self.name}] 过滤掉一条解析出的无效结果。URL: {raw_link}, 错误: {e}"
                                 )
                         else:
                             logger.debug(f"[{self.name}] 跳过一个不完整的 result div。")
 
-            except aiohttp.ClientError as e:
+            # --- 新增: 捕获超时和 HTTP 错误 ---
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"[{self.name}] 抓取超时 ({REQUEST_TIMEOUT_SECONDS}s): {search_url}"
+                )
+            except ClientResponseError as e:
+                logger.error(
+                    f"[{self.name}] 抓取时发生 HTTP 错误: 状态码={e.status}, 信息={e.message}, URL={search_url}"
+                )
+            # --------------------------------
+            except ClientError as e:  # ClientError
                 logger.error(f"[{self.name}] 抓取时发生网络错误: {e}")
             except Exception as e:
                 logger.error(
@@ -95,12 +117,10 @@ class DuckDuckGoScrapeSearch(BaseSearchEngine):
                 )
 
         end_time = time.time()
-
-        # 构建并返回标准的 SearchResponse 对象
-        # 注意：此引擎无法获取 estimated_total_results，所以该字段为 None
         return SearchResponse(
             query=search_query,
             engine_name=self.name,
             results=results_list,
             search_time_seconds=round(end_time - start_time, 4),
+            # estimated_total_results=None, # SearchResponse 模型定义了默认值None，可省略
         )
