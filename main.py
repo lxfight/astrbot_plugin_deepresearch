@@ -72,6 +72,11 @@ MAX_CONTENT_LENGTH = 6000
 MAX_SELECTED_LINKS = 50
 # 抓取超时
 FETCH_TIMEOUT = 30.0
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
+}
 
 
 @register(
@@ -92,7 +97,11 @@ class DeepResearchPlugin(Star):
         self.config = config
         # 初始化异步 HTTP 客户端
         self.client = httpx.AsyncClient(
-            timeout=FETCH_TIMEOUT, http2=True, follow_redirects=True, verify=False
+            timeout=FETCH_TIMEOUT,
+            http2=True,
+            follow_redirects=True,
+            verify=False,
+            headers=HEADERS,
         )
         self.search_engine_initialized = False
         self.available_engine_names: List[str] = []
@@ -128,10 +137,17 @@ class DeepResearchPlugin(Star):
             self.available_engine_names = []  # 确保失败时列表为空
 
     async def terminate(self):
-        """插件终止时清理资源"""
-        if hasattr(self, "client") and not self.client.is_closed:
-            await self.client.aclose()
-            logger.info("DeepResearchPlugin 资源已释放，HTTP 客户端已关闭。")
+        """
+        插件终止，清理资源
+        """
+        logger.info("DeepResearchPlugin 正在关闭 HTTP Client...")
+        # 必须显式关闭长期存在的 client 实例
+        if hasattr(self, "client") and self.client and not self.client.is_closed:
+            try:
+                await self.client.aclose()
+                logger.info("DeepResearchPlugin HTTP Client 已关闭。")
+            except Exception as e:
+                logger.error(f"DeepResearchPlugin 关闭 HTTP Client 时出错: {e}")
 
     # ------------------ LLM 调用辅助函数 ------------------
     async def _call_llm(
@@ -356,36 +372,79 @@ class DeepResearchPlugin(Star):
     # ------------------ 阶段三：内容处理与分析 (Content Processing & Analysis) ------------------
 
     async def _fetch_and_parse_content(self, url: str) -> Optional[str]:
-        """抓取单个URL内容并提取清洗后的文本"""
-        logger.info(f"阶段三：正在抓取 URL: {url}")
+        """
+        抓取单个 URL 的内容，解析并清理 HTML，转换为纯文本。
+        使用长期存在的 self.client 实例。
+        """
+        logger.info(f"阶段三：正在抓取 URL: {url} ")
+        # headers = HEADERS # 如果 client 创建时没设置 headers，则在 get 时传入
+        html_content = ""
         try:
-            async with self.client as client:
-                response = await client.get(
-                    url, headers={"User-Agent": "Mozilla/5.0 AstrBot/1.0"}
-                )
-                response.raise_for_status()  # 检查 HTTP 错误
+            # --- 错误修复核心 ---
+            # 1. 移除 async with self.client as client:
+            # 2. 直接使用 self.client.get，但将 response 作为上下文管理器
+            # 3. 捕获更具体的 httpx 异常
+            async with self.client.get(url) as response:  # headers=headers 可选
+                response.raise_for_status()  # 触发 HTTPStatusError
+                # 限制读取大小以防超大页面
+                content_bytes = b""
+                async for chunk in response.aiter_bytes(chunk_size=8192):
+                    content_bytes += chunk
+                    if (
+                        len(content_bytes) > MAX_CONTENT_LENGTH * 3
+                    ):  # 设置一个合理的上限防止内存爆炸
+                        logger.warning(f"URL {url} 内容过大，截断读取。")
+                        break
+                # 尝试自动检测编码
+                html_content = response.encoding_policy.decode(content_bytes)
+            # --- HTML 解析与清理 (保持原有逻辑) ---
+            if not html_content:
+                return None
 
-                # 使用 BeautifulSoup 提取文本
-                soup = BeautifulSoup(response.content, "lxml")
-                # 移除 script 和 style 标签
-                for script in soup(["script", "style"]):
-                    script.decompose()
+            soup = BeautifulSoup(html_content, "lxml")
+            # 移除 script 和 style
+            for script in soup(
+                ["script", "style", "noscript", "nav", "footer", "header", "aside"]
+            ):
+                script.decompose()
 
-                text = soup.get_text()
-                # 清洗文本：移除多余空白字符
-                text = re.sub(r"\s+", " ", text).strip()
-                # 截断过长文本
-                logger.info(f"阶段三：URL {url} 抓取完成，清洗后长度: {len(text)}")
-                return text[:MAX_CONTENT_LENGTH]
-        except httpx.HTTPStatusError as e:
-            logger.warning(
-                f"抓取 URL {url} 失败，HTTP 状态码: {e.response.status_code}"
+            # 优先尝试获取 article 标签
+            main_content_tag = (
+                soup.find("article") or soup.find("main") or soup.body or soup
             )
+
+            # 转换为 markdown 再转回 text 以更好清理格式
+            md_text = markdown.markdown(main_content_tag.decode_contents())
+            text = "".join(BeautifulSoup(md_text, "lxml").findAll(string=True))
+            # 清理多余空白和换行
+            cleaned_text = re.sub(r"\s+", " ", text).strip()
+            final_text = cleaned_text[:MAX_CONTENT_LENGTH]
+            logger.debug(
+                f"阶段三：URL {url} 内容抓取并清理完成，长度: {len(final_text)}"
+            )
+            return final_text
+            # --- 结束 HTML 解析 ---
+        # --- 修改: 捕获具体 httpx 异常 ---
+        except httpx.TimeoutException as e:
+            logger.warning(f"抓取 URL {url} 超时 ({FETCH_TIMEOUT}s): {e}")
+            return None
+        except httpx.HTTPStatusError as e:
+            # 由 raise_for_status() 触发，如 404, 500
+            logger.warning(
+                f"抓取 URL {url} 发生 HTTP 错误: 状态码={e.response.status_code}, 错误={e}"
+            )
+            return None
         except httpx.RequestError as e:
-            logger.warning(f"抓取 URL {url} 失败，请求错误: {e}")
+            # 包括连接错误, DNS 错误等
+            logger.warning(f"抓取 URL {url} 发生请求错误: {e}")
+            return None
+        # ------------------------------------
         except Exception as e:
-            logger.error(f"抓取或解析 URL {url} 发生未知错误: {e}", exc_info=True)
-        return None
+            # 捕获 BeautifulSoup, markdown, re 等解析过程中的其他错误
+            logger.error(
+                f"抓取或解析 URL {url} 发生未知错误: {e}", exc_info=True
+            )  # 保留 exc_info
+            return None
 
     async def _summarize_content(
         self, provider: Provider, query: str, url: str, content: str
@@ -422,8 +481,9 @@ class DeepResearchPlugin(Star):
         """阶段三：并行抓取内容并生成摘要"""
         logger.info("阶段三：开始并行抓取和总结内容...")
         # 创建并行任务
-        tasks = [self._process_one_link(provider, query, url) for url in selected_links]
-        # 并行执行，允许部分失败
+        tasks = [
+            self._process_one_link(provider, query, link) for link in selected_links
+        ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 过滤掉失败或无效的结果
