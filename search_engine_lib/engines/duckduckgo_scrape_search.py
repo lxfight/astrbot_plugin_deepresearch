@@ -41,7 +41,7 @@ class DuckDuckGoScrapeSearch(BaseSearchEngine):
 
     async def search(self, search_query: SearchQuery) -> SearchResponse:
         start_time = time.time()
-        base_url = "https://dark-eel-45.deno.dev/"
+        base_url = "https://html.duckduckgo.com/html/"
         search_url = f"{base_url}?q={quote_plus(search_query.query)}"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
