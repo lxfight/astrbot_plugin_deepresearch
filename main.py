@@ -186,11 +186,11 @@ class DeepResearchPlugin(Star):
         请严格按照以下 JSON 格式返回结果，不要包含任何额外的解释或文本。
         格式要求：
         {
-          "original_question": "用户输入的原话",
-          "sub_questions": ["将复杂问题拆解成的具体、易于检索的小问题列表"],
-          "sub_topics": ["问题中包含的相关主题关键词列表"],
-          "expansion_questions": ["基于原始问题，生成的有助于提供更全面答案的扩展性问题列表"],
-          "search_queries": ["结合以上所有信息，生成 3-5 个用于搜索引擎的高质量搜索关键词短语列表"]
+            "original_question": "用户输入的原话",
+            "sub_questions": ["将复杂问题拆解成的具体、易于检索的小问题列表"],
+            "sub_topics": ["问题中包含的相关主题关键词列表"],
+            "expansion_questions": ["基于原始问题，生成的有助于提供更全面答案的扩展性问题列表"],
+            "search_queries": ["结合以上所有信息，生成 3-5 个用于搜索引擎的高质量搜索关键词短语列表"]
         }
         """
         response_text = await self._call_llm(provider, query, system_prompt)
