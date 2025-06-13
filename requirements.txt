@@ -3,3 +3,4 @@ beautifulsoup4
 lxml
 markdown
 pydantic
+duckduckgo-search
