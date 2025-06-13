@@ -5,6 +5,7 @@ from typing import Dict, Any
 
 try:
     from duckduckgo_search import DDGS
+
     DDGS_AVAILABLE = True
 except ImportError:
     DDGS_AVAILABLE = False
@@ -15,6 +16,7 @@ from .. import register_engine
 from ..base import BaseSearchEngine
 from ..models import SearchQuery, SearchResultItem, SearchResponse
 from astrbot.api import logger
+
 
 @register_engine
 class DuckDuckGoAPISearch(BaseSearchEngine):
@@ -34,7 +36,9 @@ class DuckDuckGoAPISearch(BaseSearchEngine):
 
     async def check_config(self) -> bool:
         if not DDGS_AVAILABLE:
-            logger.error(f"[{self.name}] DuckDuckGo搜索库未安装。请运行: pip install duckduckgo-search")
+            logger.error(
+                f"[{self.name}] DuckDuckGo搜索库未安装。请运行: pip install duckduckgo-search"
+            )
             return False
         logger.debug(f"[{self.name}] 配置检查通过。")
         return True
@@ -50,17 +54,16 @@ class DuckDuckGoAPISearch(BaseSearchEngine):
             )
 
         start_time = time.time()
-        logger.info(f"[{self.name}] 正在搜索: '{search_query.query}' (count={search_query.count})")
+        logger.info(
+            f"[{self.name}] 正在搜索: '{search_query.query}' (count={search_query.count})"
+        )
         results_list = []
 
         try:
             # 使用异步执行器运行同步的DDGS搜索
             loop = asyncio.get_event_loop()
             ddgs_results = await loop.run_in_executor(
-                None, 
-                self._search_sync, 
-                search_query.query, 
-                search_query.count
+                None, self._search_sync, search_query.query, search_query.count
             )
 
             for item in ddgs_results:
@@ -82,7 +85,7 @@ class DuckDuckGoAPISearch(BaseSearchEngine):
         logger.info(
             f"[{self.name}] 搜索完成, 共找到 {len(results_list)} 条结果, 耗时 {round(end_time - start_time, 4)} 秒"
         )
-        
+
         return SearchResponse(
             query=search_query,
             engine_name=self.name,
@@ -95,13 +98,15 @@ class DuckDuckGoAPISearch(BaseSearchEngine):
         """同步搜索方法，在执行器中运行"""
         try:
             with DDGS() as ddgs:
-                results = list(ddgs.text(
-                    query, 
-                    max_results=max_results,
-                    region='wt-wt',  # 全球结果
-                    safesearch='moderate',
-                    timelimit=None
-                ))
+                results = list(
+                    ddgs.text(
+                        query,
+                        max_results=max_results,
+                        region="wt-wt",  # 全球结果
+                        safesearch="moderate",
+                        timelimit=None,
+                    )
+                )
                 return results
         except Exception as e:
             logger.error(f"[{self.name}] DDGS同步搜索错误: {e}")

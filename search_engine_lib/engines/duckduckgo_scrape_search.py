@@ -57,12 +57,13 @@ class DuckDuckGoScrapeSearch(BaseSearchEngine):
 
         # 创建更宽松的SSL配置
         import ssl
+
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
-        
+
         connector = aiohttp.TCPConnector(ssl=ssl_context, limit=100, limit_per_host=30)
-        
+
         # --- 修改: session 中加入 timeout 和 connector ---
         async with aiohttp.ClientSession(
             headers=headers, timeout=TIMEOUT_CONFIG, connector=connector
@@ -83,36 +84,38 @@ class DuckDuckGoScrapeSearch(BaseSearchEngine):
                             # --- 检查是否已达到所需数量 ---
                             if len(results_list) >= search_query.count:
                                 break
-                            
+
                             # 查找标题链接
                             title_link = row.find("a", href=True)
                             if not title_link:
                                 continue
-                                
+
                             # 获取URL
                             raw_link = title_link.get("href")
                             if not raw_link or raw_link.startswith("/"):
                                 continue  # 跳过相对链接或空链接
-                            
+
                             # 获取标题
                             title_text = title_link.get_text(strip=True)
                             if not title_text:
                                 continue
-                            
+
                             # 查找描述文本（通常在下一行或同一单元格）
                             snippet_text = ""
                             next_sibling = title_link.find_next_sibling(string=True)
                             if next_sibling:
                                 snippet_text = next_sibling.strip()
-                            
+
                             # 如果没有找到同级描述，查找父级容器中的文本
                             if not snippet_text:
                                 parent_cell = title_link.find_parent("td")
                                 if parent_cell:
                                     all_text = parent_cell.get_text(strip=True)
                                     # 移除标题部分，剩下的作为描述
-                                    snippet_text = all_text.replace(title_text, "").strip()
-                            
+                                    snippet_text = all_text.replace(
+                                        title_text, ""
+                                    ).strip()
+
                             # 如果仍然没有描述，使用默认值
                             if not snippet_text:
                                 snippet_text = "无描述"
@@ -124,14 +127,18 @@ class DuckDuckGoScrapeSearch(BaseSearchEngine):
                                     snippet=snippet_text,
                                 )
                                 results_list.append(result_item)
-                                logger.debug(f"[{self.name}] 成功解析结果: {title_text}")
+                                logger.debug(
+                                    f"[{self.name}] 成功解析结果: {title_text}"
+                                )
                             except ValidationError as e:
                                 logger.warning(
                                     f"[{self.name}] 过滤掉一条解析出的无效结果。URL: {raw_link}, 错误: {e}"
                                 )
                     else:
                         # 如果没有找到结果表格，记录HTML结构用于调试
-                        logger.warning(f"[{self.name}] 未找到搜索结果表格，可能页面结构已变化")
+                        logger.warning(
+                            f"[{self.name}] 未找到搜索结果表格，可能页面结构已变化"
+                        )
                         logger.debug(f"[{self.name}] 页面HTML前500字符: {html[:500]}")
 
             # --- 新增: 捕获超时和 HTTP 错误 ---

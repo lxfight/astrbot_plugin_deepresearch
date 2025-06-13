@@ -716,6 +716,19 @@ class DeepResearchPlugin(Star):
                         status_msg
                         + f"\n为您生成了Markdown格式报告：\n\n{report_result}"
                     )
+                elif actual_format == "svg":
+                    # SVG格式：使用File组件发送HTML文件
+                    import os
+
+                    filename = os.path.basename(report_result)
+                    yield event.chain_result(
+                        [
+                            Comp.Plain(
+                                text=status_msg + "\n为您生成了SVG增强版HTML报告："
+                            ),
+                            Comp.File(name=filename, file=report_result),
+                        ]
+                    )
                 else:
                     # 其他格式：直接返回结果
                     yield event.plain_result(

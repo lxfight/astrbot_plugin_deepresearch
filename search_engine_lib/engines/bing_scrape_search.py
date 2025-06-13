@@ -68,7 +68,7 @@ class BingScrapeSearch(BaseSearchEngine):
 
                     # 改进的Bing搜索结果解析
                     found_results = False
-                    
+
                     # 方法1: 寻找标准的搜索结果
                     selectors_to_try = [
                         # 新版Bing结构
@@ -81,31 +81,37 @@ class BingScrapeSearch(BaseSearchEngine):
                         (".b_algo", "a[href]", ".b_caption"),
                         # 其他可能的结构
                         (".sr_rslts .g", "h3 a", ".st"),
-                        ("div[data-hveid]", "h3 a", ".st")
+                        ("div[data-hveid]", "h3 a", ".st"),
                     ]
-                    
-                    for container_selector, title_selector, snippet_selector in selectors_to_try:
+
+                    for (
+                        container_selector,
+                        title_selector,
+                        snippet_selector,
+                    ) in selectors_to_try:
                         if found_results:
                             break
-                            
+
                         containers = soup.select(container_selector)
-                        logger.debug(f"[{self.name}] 尝试选择器 '{container_selector}', 找到 {len(containers)} 个容器")
-                        
+                        logger.debug(
+                            f"[{self.name}] 尝试选择器 '{container_selector}', 找到 {len(containers)} 个容器"
+                        )
+
                         for container in containers:
                             if len(results_list) >= search_query.count:
                                 break
-                            
+
                             # 查找标题链接
                             title_tag = container.select_one(title_selector)
                             if not title_tag:
                                 continue
-                            
+
                             title_text = title_tag.get_text(strip=True)
                             link_url = title_tag.get("href")
-                            
+
                             if not title_text or not link_url:
                                 continue
-                            
+
                             # 查找描述
                             snippet_text = "无描述"
                             snippet_elem = container.select_one(snippet_selector)
@@ -120,7 +126,7 @@ class BingScrapeSearch(BaseSearchEngine):
                                     snippet_text = snippet_text[:200] + "..."
                                 if not snippet_text or len(snippet_text) < 10:
                                     snippet_text = "无描述"
-                            
+
                             try:
                                 result_item = SearchResultItem(
                                     title=title_text,
@@ -129,15 +135,21 @@ class BingScrapeSearch(BaseSearchEngine):
                                 )
                                 results_list.append(result_item)
                                 found_results = True
-                                logger.debug(f"[{self.name}] 成功解析结果: {title_text}")
+                                logger.debug(
+                                    f"[{self.name}] 成功解析结果: {title_text}"
+                                )
                             except ValidationError as e:
-                                logger.warning(f"[{self.name}] 过滤掉一条解析出的无效结果。URL: {link_url}, 错误: {e}")
-                    
+                                logger.warning(
+                                    f"[{self.name}] 过滤掉一条解析出的无效结果。URL: {link_url}, 错误: {e}"
+                                )
+
                     if not found_results:
-                        logger.warning(f"[{self.name}] 未找到任何搜索结果，可能页面结构已变化")
+                        logger.warning(
+                            f"[{self.name}] 未找到任何搜索结果，可能页面结构已变化"
+                        )
                         # 保存HTML用于调试
                         logger.debug(f"[{self.name}] 页面HTML前1000字符: {html[:1000]}")
-                        
+
                         # 尝试最后的备用方案：查找所有包含href的链接
                         all_links = soup.find_all("a", href=True)
                         valid_links = []
@@ -145,15 +157,20 @@ class BingScrapeSearch(BaseSearchEngine):
                             href = link.get("href")
                             text = link.get_text(strip=True)
                             # 过滤掉明显不是搜索结果的链接
-                            if (href and text and 
-                                not href.startswith("#") and 
-                                not "bing.com" in href and
-                                len(text) > 5 and
-                                len(text) < 200):
+                            if (
+                                href
+                                and text
+                                and not href.startswith("#")
+                                and not "bing.com" in href
+                                and len(text) > 5
+                                and len(text) < 200
+                            ):
                                 valid_links.append((text, href))
-                        
+
                         # 取前几个有效链接
-                        for i, (title_text, link_url) in enumerate(valid_links[:search_query.count]):
+                        for i, (title_text, link_url) in enumerate(
+                            valid_links[: search_query.count]
+                        ):
                             try:
                                 result_item = SearchResultItem(
                                     title=title_text,
@@ -164,9 +181,11 @@ class BingScrapeSearch(BaseSearchEngine):
                                 found_results = True
                             except ValidationError:
                                 continue
-                        
+
                         if found_results:
-                            logger.info(f"[{self.name}] 使用备用方案成功提取了 {len(results_list)} 个结果")
+                            logger.info(
+                                f"[{self.name}] 使用备用方案成功提取了 {len(results_list)} 个结果"
+                            )
 
             # --- 新增: 捕获超时和 HTTP 错误 ---
             except asyncio.TimeoutError:

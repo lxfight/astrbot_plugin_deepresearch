@@ -18,4 +18,4 @@ PLUGIN_REPO = metadata.get(
     "repo", "https://github.com/lxfight/astrbot_plugin_deepresearch"
 )
 
-REQUEST_TIMEOUT_SECONDS = 30
+REQUEST_TIMEOUT_SECONDS = 15

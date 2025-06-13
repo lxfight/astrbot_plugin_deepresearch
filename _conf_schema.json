@@ -1,4 +1,16 @@
 {
+    "default_output_format": {
+        "description": "默认输出格式",
+        "type": "string",
+        "hint": "LLM生成的内容默认使用的格式",
+        "default": "svg",
+        "options": [
+            "svg",
+            "image",
+            "markdown",
+            "html"
+        ]
+    },
     "max_search_results_per_term": {
         "description": "每个搜索词最多获取的结果数",
         "type": "int",

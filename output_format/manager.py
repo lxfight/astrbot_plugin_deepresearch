@@ -7,6 +7,7 @@ from astrbot.api import logger
 
 from .base import BaseOutputFormatter
 from .formatters import ImageFormatter, MarkdownFormatter, HTMLFormatter
+from .svg_formatter import SVGFormatter
 
 
 class OutputFormatManager:
@@ -19,7 +20,7 @@ class OutputFormatManager:
 
     def _initialize_formatters(self):
         """初始化所有格式化器"""
-        formatter_classes = [ImageFormatter, MarkdownFormatter, HTMLFormatter]
+        formatter_classes = [ImageFormatter, MarkdownFormatter, HTMLFormatter, SVGFormatter]
 
         for formatter_class in formatter_classes:
             try:
