@@ -44,7 +44,9 @@ class SVGFormatter(BaseOutputFormatter):
             logger.warning("[SVGFormatter] Markdown内容为空")
             return None
         try:
-            sections = self._parse_markdown_to_sections(markdown_content)
+            # 预处理：将文本形式的换行符转换为真实换行符
+            processed_content = self._preprocess_content(markdown_content)
+            sections = self._parse_markdown_to_sections(processed_content)
             html_content = self._generate_html_report(sections)
             temp_file = self._save_to_temp_file(html_content)
             logger.info("[SVGFormatter] HTML报告生成成功")
@@ -52,6 +54,31 @@ class SVGFormatter(BaseOutputFormatter):
         except Exception as e:
             logger.error(f"[SVGFormatter] 生成HTML报告时发生错误: {e}", exc_info=True)
             return None
+
+    def _preprocess_content(self, markdown_content: str) -> str:
+        """
+        预处理Markdown内容，将文本形式的换行符转换为真实换行符
+        """
+        # 将文本形式的 \n 转换为真实的换行符
+        processed = markdown_content.replace("\\n", "\n")
+
+        # 将文本形式的 \t 转换为真实的制表符
+        processed = processed.replace("\\t", "\t")
+
+        # 将文本形式的 \r 转换为真实的回车符（如果存在）
+        processed = processed.replace("\\r", "\r")
+
+        # 清理多余的空行（超过2个连续换行符的情况）
+        processed = re.sub(r"\n{3,}", "\n\n", processed)
+
+        # 去除行尾多余的空格
+        processed = re.sub(r"[ \t]+\n", "\n", processed)
+
+        # 去除开头和结尾的空白字符
+        processed = processed.strip()
+
+        logger.info(f"[SVGFormatter] 预处理完成，内容长度: {len(processed)}")
+        return processed
 
     def _slugify(self, text: str) -> str:
         """生成URL友好的ID"""
@@ -75,20 +102,32 @@ class SVGFormatter(BaseOutputFormatter):
             code_content = match.group(2)
             # 对代码内容进行HTML转义
             escaped_code = html.escape(code_content)
-            
+
             # 语言名称映射和标准化
             language_map = {
-                'py': 'python', 'js': 'javascript', 'ts': 'typescript',
-                'sh': 'bash', 'shell': 'bash', 'yml': 'yaml',
-                'json': 'json', 'xml': 'xml', 'html': 'markup',
-                'css': 'css', 'scss': 'scss', 'sql': 'sql',
-                'java': 'java', 'cpp': 'cpp', 'c': 'c',
-                'go': 'go', 'rust': 'rust', 'php': 'php'
+                "py": "python",
+                "js": "javascript",
+                "ts": "typescript",
+                "sh": "bash",
+                "shell": "bash",
+                "yml": "yaml",
+                "json": "json",
+                "xml": "xml",
+                "html": "markup",
+                "css": "css",
+                "scss": "scss",
+                "sql": "sql",
+                "java": "java",
+                "cpp": "cpp",
+                "c": "c",
+                "go": "go",
+                "rust": "rust",
+                "php": "php",
             }
-            
+
             normalized_lang = language_map.get(language.lower(), language.lower())
             display_lang = language.upper() if language else "TEXT"
-            
+
             # 添加语言标识属性
             code_html = f'<pre class="language-{normalized_lang}" data-language="{display_lang}"><code class="language-{normalized_lang}">{escaped_code}</code></pre>'
             placeholder = f"CODEBLOCK{uuid.uuid4().hex}ENDCODE"
@@ -106,12 +145,13 @@ class SVGFormatter(BaseOutputFormatter):
 
         def link_replacer(match):
             try:
-                url = next(original_link_iter)
-            except StopIteration:
+                # 直接使用match.group(1)更安全可靠
                 url = match.group(1)
-            link_html = (
-                f'<a href="{url}" target="_blank" rel="noopener noreferrer">来源</a>'
-            )
+            except IndexError:
+                # 预防性措施，虽然正则表达式保证了group(1)存在
+                return match.group(0)
+
+            link_html = f'<a href="{html.escape(url)}" target="_blank" rel="noopener noreferrer">来源</a>'
             placeholder = f"LINKPLACEHOLDER{uuid.uuid4().hex}ENDLINK"
             placeholders[placeholder] = link_html
             return placeholder
@@ -129,11 +169,10 @@ class SVGFormatter(BaseOutputFormatter):
             if not para.strip():
                 continue
 
-            # 检查是否是占位符（代码块或链接）
-            if any(placeholder in para for placeholder in placeholders.keys()):
-                # 直接添加，稍后会还原占位符
-                html_paragraphs.append(para)
-                continue
+            # ############# BUG FIX: 已移除错误的检查逻辑 #############
+            # 之前的代码在这里有一个检查，如果段落包含占位符，就会跳过后续所有处理，
+            # 导致标题等Markdown语法失效。现已移除该检查。
+            # ######################################################
 
             # 按行处理段落内的Markdown
             lines = para.split("\n")
@@ -141,32 +180,32 @@ class SVGFormatter(BaseOutputFormatter):
             in_list = False
 
             for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
+                # 注意：此处不使用 line.strip()，以保留代码块内的缩进
+                # 但对于标题检测，需要检查剥离空格后的行首
+                stripped_line = line.lstrip()
 
                 # 处理标题（支持1-6级）
-                if line.startswith("######"):
-                    processed_lines.append(f"<h6>{line[7:].strip()}</h6>")
+                if stripped_line.startswith("######"):
+                    processed_lines.append(f"<h6>{stripped_line[6:].strip()}</h6>")
                     continue
-                elif line.startswith("#####"):
-                    processed_lines.append(f"<h5>{line[6:].strip()}</h5>")
+                elif stripped_line.startswith("#####"):
+                    processed_lines.append(f"<h5>{stripped_line[5:].strip()}</h5>")
                     continue
-                elif line.startswith("####"):
-                    processed_lines.append(f"<h4>{line[5:].strip()}</h4>")
+                elif stripped_line.startswith("####"):
+                    processed_lines.append(f"<h4>{stripped_line[4:].strip()}</h4>")
                     continue
-                elif line.startswith("###"):
-                    processed_lines.append(f"<h3>{line[4:].strip()}</h3>")
+                elif stripped_line.startswith("###"):
+                    processed_lines.append(f"<h3>{stripped_line[3:].strip()}</h3>")
                     continue
-                elif line.startswith("##"):
-                    processed_lines.append(f"<h2>{line[3:].strip()}</h2>")
+                elif stripped_line.startswith("##"):
+                    processed_lines.append(f"<h2>{stripped_line[2:].strip()}</h2>")
                     continue
-                elif line.startswith("#"):
-                    processed_lines.append(f"<h1>{line[2:].strip()}</h1>")
+                elif stripped_line.startswith("#"):
+                    processed_lines.append(f"<h1>{stripped_line[1:].strip()}</h1>")
                     continue
 
                 # 处理列表
-                is_list_item = line.startswith(("-", "*", "+"))
+                is_list_item = stripped_line.startswith(("- ", "* ", "+ "))
                 if is_list_item and not in_list:
                     processed_lines.append("<ul>")
                     in_list = True
@@ -176,7 +215,7 @@ class SVGFormatter(BaseOutputFormatter):
 
                 if is_list_item:
                     # 移除列表标记
-                    item_content = re.sub(r"^[-*+]\s*", "", line)
+                    item_content = re.sub(r"^[-*+]\s*", "", stripped_line)
                     processed_lines.append(f"<li>{item_content}</li>")
                 else:
                     processed_lines.append(line)
@@ -205,7 +244,8 @@ class SVGFormatter(BaseOutputFormatter):
             )
 
             # 包装成段落（除非已经是标题或列表）
-            if not re.match(r"^\s*<(h[1-6]|ul|li)", para_content):
+            if not re.match(r"^\s*<(h[1-6]|ul|li)", para_content.lstrip()):
+                # 将段落内的换行符替换为<br>
                 para_content = f"<p>{para_content.replace(chr(10), '<br>')}</p>"
 
             html_paragraphs.append(para_content)
@@ -222,29 +262,35 @@ class SVGFormatter(BaseOutputFormatter):
         final_html = re.sub(
             r"<p>(<pre>.*?</pre>)</p>", r"\1", final_html, flags=re.DOTALL
         )
+        # 修正<br>和块级标签之间的关系
+        final_html = final_html.replace("<p><br>", "<p>")
+        final_html = final_html.replace("<br></p>", "</p>")
         final_html = re.sub(r"<br>\s*<(ul|/ul|li|h[1-6]|pre)", r"<\1", final_html)
 
         # 还原所有占位符
         for placeholder, content in placeholders.items():
-            final_html = final_html.replace(placeholder, content)
+            # 需要在转义后的HTML中替换，所以要对placeholder进行转义
+            escaped_placeholder = html.escape(placeholder)
+            final_html = final_html.replace(escaped_placeholder, content)
 
         return final_html
 
     def _parse_markdown_to_sections(
         self, markdown_content: str
     ) -> List[MarkdownSection]:
-        """将Markdown解析成章节"""
+        """将Markdown解析成章节 - 只有H2作为章节卡片，H3及以下在卡片内"""
         sections: List[MarkdownSection] = []
 
-        # 决定主分隔符
+        # 检测标题类型，优先使用H2，只有在没有H2时才使用H3作为章节分隔符
         has_h2 = bool(re.search(r"^##\s+", markdown_content, re.MULTILINE))
-        primary_delimiter = "##" if has_h2 else "###"
+        primary_delimiter_raw = "##" if has_h2 else "###"
+        primary_delimiter_re = re.escape(primary_delimiter_raw)
 
         # 使用主分隔符来分割整个文档
-        split_marker = "__SECTION_SPLIT__"
+        split_marker = "\n__SECTION_SPLIT__\n"
         content_with_markers = re.sub(
-            f"^{primary_delimiter}\\s+",
-            f"{split_marker}{primary_delimiter} ",
+            f"^{primary_delimiter_re}\\s+(.*)",
+            f"{split_marker}{primary_delimiter_raw} \\1",
             markdown_content,
             flags=re.MULTILINE,
         )
@@ -254,14 +300,15 @@ class SVGFormatter(BaseOutputFormatter):
         # 第一个块是引言（在第一个分隔符之前的内容）
         intro_content = raw_sections.pop(0).strip()
         if intro_content:
-            # 分离标题和内容
-            lines = intro_content.split("\n", 1)
-            if lines[0].startswith("#"):
-                # 有主标题的情况
-                main_title = lines[0].replace("#", "").strip()
-                intro_text = lines[1].strip() if len(lines) > 1 else ""
-                # 将主标题和引言内容合并
-                full_intro = f"# {main_title}\n\n{intro_text}"
+            # 尝试从引言中分离出H1主标题
+            main_title_match = re.match(r"^#\s+(.*)", intro_content)
+            if main_title_match:
+                # 报告主标题
+                main_title_text = main_title_match.group(1).strip()
+                # 报告概述内容（主标题之后的所有内容）
+                intro_body = intro_content[main_title_match.end() :].strip()
+                # 重新组合，确保渲染正确
+                full_intro = f"# {main_title_text}\n\n{intro_body}"
             else:
                 full_intro = intro_content
 
@@ -276,7 +323,7 @@ class SVGFormatter(BaseOutputFormatter):
             )
 
         # 用于确保ID唯一性
-        used_ids = set()
+        used_ids = set(["introduction"])
         section_counter = {}
 
         for raw_section in raw_sections:
@@ -285,25 +332,35 @@ class SVGFormatter(BaseOutputFormatter):
 
             # 提取标题和内容
             lines = raw_section.strip().split("\n", 1)
-            title = lines[0].replace(primary_delimiter, "").strip()
+            # 确保标题行是以分隔符开头的
+            if not lines[0].startswith(primary_delimiter_raw):
+                continue
+
+            title = lines[0][len(primary_delimiter_raw) :].strip()
             content_md = lines[1] if len(lines) > 1 else ""
 
+            # 直接渲染整个章节内容，包括其中的H3等子标题
+            # 将标题本身也加入到内容中，以便渲染函数统一处理
+            full_section_content = f"{primary_delimiter_raw} {title}\n\n{content_md}"
+
+            # 注意：这里的标题渲染是为了在卡片内容区显示，卡片的大标题是单独处理的
+            # 我们需要的是卡片内的纯内容
             content_html = self._render_markdown(content_md)
 
             # 生成唯一ID
             base_id = self._slugify(title)
-            if base_id in used_ids:
-                section_counter[base_id] = section_counter.get(base_id, 1) + 1
-                unique_id = f"{base_id}-{section_counter[base_id]}"
-            else:
-                unique_id = base_id
+            unique_id = base_id
+            count = 1
+            while unique_id in used_ids:
+                unique_id = f"{base_id}-{count}"
+                count += 1
             used_ids.add(unique_id)
 
             sections.append(
                 MarkdownSection(
                     id=unique_id,
                     title=title,
-                    level=2,
+                    level=2 if has_h2 else 3,
                     content_html=content_html,
                 )
             )
@@ -314,33 +371,49 @@ class SVGFormatter(BaseOutputFormatter):
         """生成完整的HTML报告 (注入了丰富的动画特效)"""
         # 为目录项添加动画延迟
         toc_html = "".join(
-            f'<li style="--anim-delay: {i * 0.05}s;"><a href="#{s["id"]}">{s["title"]}</a></li>'
+            f'<li style="--anim-delay: {i * 0.05}s;"><a href="#{s["id"]}">{html.escape(s["title"])}</a></li>'
             for i, s in enumerate(sections)
         )
-        
+
         # 提取主标题作为侧边栏标题
         sidebar_title = "AI研究报告"
-        if sections and sections[0]["content_html"]:
+        if (
+            sections
+            and sections[0]["id"] == "introduction"
+            and sections[0]["content_html"]
+        ):
             # 从第一个章节的HTML中提取h1标题
-            import re
-            h1_match = re.search(r'<h1>(.*?)</h1>', sections[0]["content_html"])
+            h1_match = re.search(
+                r"<h1>(.*?)</h1>", sections[0]["content_html"], re.DOTALL
+            )
             if h1_match:
                 # 清理HTML标签并提取纯文本
-                clean_title = re.sub(r'<[^>]+>', '', h1_match.group(1))
-                if clean_title and len(clean_title.strip()) > 0:
-                    sidebar_title = clean_title.strip() + " - 研究报告"
+                clean_title = re.sub(r"<[^>]+>", "", h1_match.group(1)).strip()
+                if clean_title:
+                    sidebar_title = html.escape(clean_title) + " - 研究报告"
 
         cards_html = ""
-        for section in sections:
+        for i, section in enumerate(sections):
             section_id = section["id"]
+            escaped_title = html.escape(section["title"])
+
             # 为标题的每个字符包裹<span>，用于动画
             title_spans = "".join(
-                f'<span class="char" style="--char-delay: {i * 0.03}s;">{char}</span>'
-                for i, char in enumerate(section["title"])
+                f'<span class="char" style="--char-delay: {j * 0.03}s;">{char}</span>'
+                for j, char in enumerate(escaped_title)
             )
-            section_title_html = f'<h2 class="card-title" data-title="{section["title"]}">{title_spans}</h2>'
+
+            # 报告概述使用H1，其他章节使用H2作为卡片标题
+            title_tag = "h1" if section["id"] == "introduction" else "h2"
+            section_title_html = f'<{title_tag} class="card-title" data-title="{escaped_title}">{title_spans}</{title_tag}>'
 
             section_content = section["content_html"]
+
+            # 对于报告概述卡片，我们不希望在内容区重复显示H1标题
+            if section["id"] == "introduction":
+                section_content = re.sub(
+                    r"<h1[^>]*>.*?</h1>", "", section_content, count=1
+                ).strip()
 
             cards_html += f"""
             <section class="report-card scroll-reveal" id="{section_id}">
@@ -515,14 +588,46 @@ class SVGFormatter(BaseOutputFormatter):
         .card-content > *:last-child {{ margin-bottom: 0; }}
 
         .card-content h1, .card-content h2, .card-content h3, .card-content h4, .card-content h5, .card-content h6 {{
-            margin-top: 2.2em; margin-bottom: 1em; font-weight: 600; line-height: 1.4; color: var(--text-primary);
+            margin-top: 2.2em; margin-bottom: 1em; line-height: 1.4; color: var(--text-primary);
         }}
-        .card-content h1 {{ font-size: 1.5em; }}
-        .card-content h2 {{ font-size: 1.35em; border-bottom: 1px solid #f3f4f6; padding-bottom: 0.4em; }}
-        .card-content h3 {{ font-size: 1.2em; }}
-        .card-content h4 {{ font-size: 1.1em; color: #374151; }}
-        .card-content h5 {{ font-size: 1.05em; color: #4b5563; }}
-        .card-content h6 {{ font-size: 1em; color: #6b7280; }}
+        .card-content h1 {{ font-size: 1.5em; font-weight: 600; }}
+        .card-content h2 {{ font-size: 1.35em; font-weight: 600; border-bottom: 1px solid #f3f4f6; padding-bottom: 0.4em; }}
+        
+        /* H3-H6 标题样式优化：加粗字体，适当大小 */
+        .card-content h3 {{ 
+            font-size: 1.25em; 
+            font-weight: 700; 
+            color: var(--text-primary);
+            margin-top: 2.5em; 
+            margin-bottom: 1.2em;
+            border-left: 4px solid var(--accent-color);
+            padding-left: 12px;
+        }}
+        .card-content h4 {{ 
+            font-size: 1.15em; 
+            font-weight: 700; 
+            color: #374151;
+            margin-top: 2.2em; 
+            margin-bottom: 1.1em;
+            padding-bottom: 0.3em;
+            border-bottom: 1px dashed var(--border-color);
+        }}
+        .card-content h5 {{ 
+            font-size: 1.05em; 
+            font-weight: 700; 
+            color: #4b5563;
+            margin-top: 2em; 
+            margin-bottom: 1em;
+        }}
+        .card-content h6 {{ 
+            font-size: 1.0em; 
+            font-weight: 700; 
+            color: var(--text-secondary);
+            margin-top: 1.8em; 
+            margin-bottom: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }}
         .card-content p {{ margin-bottom: 1.25em; color: var(--text-secondary); }}
         .card-content strong {{ color: var(--text-primary); font-weight: 600; }}
         .card-content a {{
@@ -581,40 +686,13 @@ class SVGFormatter(BaseOutputFormatter):
         .token.prolog,
         .token.doctype,
         .token.cdata {{ color: #718096; }}
-        
         .token.punctuation {{ color: #e2e8f0; }}
-        
-        .token.property,
-        .token.tag,
-        .token.boolean,
-        .token.number,
-        .token.constant,
-        .token.symbol,
-        .token.deleted {{ color: #f56565; }}
-        
-        .token.selector,
-        .token.attr-name,
-        .token.string,
-        .token.char,
-        .token.builtin,
-        .token.inserted {{ color: #68d391; }}
-        
-        .token.operator,
-        .token.entity,
-        .token.url,
-        .language-css .token.string,
-        .style .token.string {{ color: #4fd1c7; }}
-        
-        .token.atrule,
-        .token.attr-value,
-        .token.keyword {{ color: #9f7aea; }}
-        
-        .token.function,
-        .token.class-name {{ color: #fbb6ce; }}
-        
-        .token.regex,
-        .token.important,
-        .token.variable {{ color: #f6ad55; }}
+        .token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol, .token.deleted {{ color: #f56565; }}
+        .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted {{ color: #68d391; }}
+        .token.operator, .token.entity, .token.url, .language-css .token.string, .style .token.string {{ color: #4fd1c7; }}
+        .token.atrule, .token.attr-value, .token.keyword {{ color: #9f7aea; }}
+        .token.function, .token.class-name {{ color: #fbb6ce; }}
+        .token.regex, .token.important, .token.variable {{ color: #f6ad55; }}
 
         /* --- 页脚 --- */
         .footer {{ text-align: center; padding: 40px; font-size: 0.9em; color: #9ca3af; }}
@@ -661,18 +739,21 @@ class SVGFormatter(BaseOutputFormatter):
             // --- 2. 目录高亮观察器 ---
             const tocLinks = document.querySelectorAll('.toc a');
             const sectionObserver = new IntersectionObserver((entries) => {{
+                let anyIntersecting = false;
                 entries.forEach(entry => {{
                     const id = entry.target.getAttribute('id');
                     const link = document.querySelector(`.toc a[href="#${{id}}"]`);
                     if (link) {{
-                        if (entry.isIntersecting) {{
+                        if (entry.isIntersecting && entry.intersectionRatio > 0.5) {{
+                            tocLinks.forEach(l => l.classList.remove('active'));
                             link.classList.add('active');
+                            anyIntersecting = true;
                         }} else {{
                             link.classList.remove('active');
                         }}
                     }}
                 }});
-            }}, {{ rootMargin: "-40% 0px -60% 0px" }}); // 调整触发区域
+            }}, {{ rootMargin: "-30% 0px -60% 0px", threshold: [0.5, 1.0] }});
             document.querySelectorAll('.report-card').forEach(section => sectionObserver.observe(section));
 
             // --- 3. 目录点击跳转与高亮动画 ---
@@ -694,12 +775,9 @@ class SVGFormatter(BaseOutputFormatter):
                 }});
             }});
 
-            // --- 4. 卡片悬停高亮特效 (已移除3D倾斜) ---
-            // 卡片悬停效果现在通过CSS处理，无需JavaScript
-
-            // --- 5. 鼠标光标追随特效 ---
+            // --- 4. 鼠标光标追随特效 ---
             const glow = document.querySelector('.cursor-glow');
-            if (glow) {{
+            if (glow && window.matchMedia('(pointer: fine)').matches) {{
                 document.addEventListener('mousemove', (e) => {{
                     glow.style.transform = `translate(${{e.clientX}}px, ${{e.clientY}}px)`;
                 }});
@@ -720,11 +798,8 @@ class SVGFormatter(BaseOutputFormatter):
         // 配置Prism.js自动加载器
         if (typeof Prism !== 'undefined') {{
             Prism.plugins.autoloader.languages_path = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
-            
-            // 手动高亮所有代码块
-            document.addEventListener('DOMContentLoaded', function() {{
-                Prism.highlightAll();
-            }});
+            // 确保Prism在DOM加载后高亮所有代码
+            Prism.highlightAll();
         }}
     </script>
 </body>
