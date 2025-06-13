@@ -200,17 +200,6 @@ astrbot_plugin_deepresearch/
 6. 360搜索（优先级6）- 中文搜索
 7. Google API（优先级4，默认禁用）- 需要API密钥
 
-## 依赖要求
-
-### 必需依赖
-- `aiohttp` - 异步HTTP客户端
-- `beautifulsoup4` - HTML解析
-- `pydantic` - 数据验证
-- `markdown` - Markdown处理
-- `httpx` - HTTP客户端
-
-### 可选依赖
-- `duckduckgo-search` - DuckDuckGo官方搜索库（已安装）
 
 ## 版本信息
 
