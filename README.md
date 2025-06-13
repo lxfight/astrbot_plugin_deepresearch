@@ -175,14 +175,11 @@ graph TD
 
 **我们欢迎所有形式的贡献！**
 
-<a href="https://github.com/yourusername/repo/issues">
+<a href="https://github.com/lxfight/astrbot_plugin_deepresearch/issues">
   <img src="https://img.shields.io/badge/🐛_报告问题-Issues-red?style=for-the-badge" alt="Issues">
 </a>
-<a href="https://github.com/yourusername/repo/pulls">
+<a href="https://github.com/lxfight/astrbot_plugin_deepresearch/pulls">
   <img src="https://img.shields.io/badge/🚀_提交代码-Pull%20Requests-green?style=for-the-badge" alt="Pull Requests">
-</a>
-<a href="https://github.com/yourusername/repo/discussions">
-  <img src="https://img.shields.io/badge/💬_参与讨论-Discussions-blue?style=for-the-badge" alt="Discussions">
 </a>
 
 </div>
