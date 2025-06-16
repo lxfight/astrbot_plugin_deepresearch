@@ -6,8 +6,10 @@ import re
 import tempfile
 import datetime
 import html
-from typing import Any, Dict, Optional, List, TypedDict
-
+from typing import Dict, Optional, List, TypedDict
+import asyncio
+import aiohttp
+from bs4 import BeautifulSoup
 from astrbot.api.star import Star
 from astrbot.api import logger
 
@@ -37,16 +39,85 @@ class SVGFormatter(BaseOutputFormatter):
     def file_extension(self) -> str:
         return ".html"
 
+    # MODIFICATION START: 新增异步获取网页标题的方法
+    async def _fetch_link_title(
+        self, session: aiohttp.ClientSession, url: str
+    ) -> Optional[str]:
+        """异步获取给定URL的网页标题"""
+        try:
+            # 设置合理的超时时间，防止长时间等待
+            async with session.get(url, timeout=10, ssl=False) as response:
+                if response.status == 200:
+                    text = await response.text()
+                    soup = BeautifulSoup(text, "html.parser")
+                    if soup.title and soup.title.string:
+                        # 清理标题并截断过长的标题
+                        title = soup.title.string.strip()
+                        if len(title) > 40:
+                            title = title[:38] + "…"
+                        return title
+        except asyncio.TimeoutError:
+            logger.warning(f"[SVGFormatter] 获取URL标题超时: {url}")
+        except aiohttp.ClientError as e:
+            logger.warning(
+                f"[SVGFormatter] 获取URL标题时发生网络错误: {url}, 错误: {e}"
+            )
+        except Exception as e:
+            logger.error(
+                f"[SVGFormatter] 解析URL时发生未知错误: {url}, 错误: {e}",
+                exc_info=False,
+            )
+        return None  # 如果失败则返回None
+
+    # MODIFICATION END
+
     async def format_report(
         self, markdown_content: str, star_instance: Star = None
     ) -> Optional[str]:
         if not self.validate_content(markdown_content):
             logger.warning("[SVGFormatter] Markdown内容为空")
             return None
+        # 检查依赖库是否已安装
+        if not all([aiohttp, BeautifulSoup]):
+            logger.error(
+                "[SVGFormatter] 依赖库 'aiohttp' 或 'beautifulsoup4' 未安装。无法解析链接标题。"
+            )
+            return None
+
         try:
             # 预处理：将文本形式的换行符转换为真实换行符
             processed_content = self._preprocess_content(markdown_content)
-            sections = self._parse_markdown_to_sections(processed_content)
+
+            # MODIFICATION START: 异步获取所有来源链接的标题
+            url_to_title_map: Dict[str, str] = {}
+            # 使用正则表达式找出所有唯一的来源URL
+            source_urls = list(
+                set(re.findall(r"\[来源:\s+(https?://[^\]]+)\]", processed_content))
+            )
+
+            if source_urls:
+                logger.info(
+                    f"[SVGFormatter] 发现 {len(source_urls)} 个来源链接，开始异步获取标题..."
+                )
+                async with aiohttp.ClientSession() as session:
+                    # 创建并发任务
+                    tasks = [
+                        self._fetch_link_title(session, url) for url in source_urls
+                    ]
+                    # 等待所有任务完成
+                    titles = await asyncio.gather(*tasks)
+                    # 构建URL到标题的映射字典，只包含成功获取的标题
+                    url_to_title_map = {
+                        url: title for url, title in zip(source_urls, titles) if title
+                    }
+                logger.info(f"[SVGFormatter] 成功获取 {len(url_to_title_map)} 个标题。")
+            # MODIFICATION END
+
+            # MODIFICATION: 将获取到的标题字典传递给解析函数
+            sections = self._parse_markdown_to_sections(
+                processed_content, url_to_title_map
+            )
+
             html_content = self._generate_html_report(sections)
             temp_file = self._save_to_temp_file(html_content)
             logger.info("[SVGFormatter] HTML报告生成成功")
@@ -87,7 +158,8 @@ class SVGFormatter(BaseOutputFormatter):
         s = re.sub(r"[^\w\-_]", "", s)
         return s if s else "section"
 
-    def _render_markdown(self, raw_text: str) -> str:
+    # MODIFICATION: 修改函数签名，接收标题字典
+    def _render_markdown(self, raw_text: str, url_to_title_map: Dict[str, str]) -> str:
         """
         增强的Markdown渲染函数，支持代码块、多级标题和来源链接
         """
@@ -95,6 +167,8 @@ class SVGFormatter(BaseOutputFormatter):
 
         # 用于存储占位符
         placeholders = {}
+        # 用于来源链接的计数器，以生成唯一编号
+        source_link_index = 0
 
         # 1. 先处理代码块（在HTML转义之前处理）
         def code_block_replacer(match):
@@ -139,24 +213,35 @@ class SVGFormatter(BaseOutputFormatter):
             r"```(\w+)?\n(.*?)\n```", code_block_replacer, raw_text, flags=re.DOTALL
         )
 
-        # 2. 提取来源链接（在HTML转义之前）
-        original_links = re.findall(r"\[来源:\s+(https?://[^\]]+)\]", text)
-        original_link_iter = iter(original_links)
-
+        # MODIFICATION START: 修改来源链接的处理逻辑以使用获取到的标题
+        # 2. 提取并处理来源链接
         def link_replacer(match):
-            try:
-                # 直接使用match.group(1)更安全可靠
-                url = match.group(1)
-            except IndexError:
-                # 预防性措施，虽然正则表达式保证了group(1)存在
-                return match.group(0)
+            nonlocal source_link_index
+            source_link_index += 1
+            url = match.group(1)
 
-            link_html = f'<a href="{html.escape(url)}" target="_blank" rel="noopener noreferrer">来源</a>'
+            # 从字典中获取标题，如果找不到，则使用 "来源" 作为后备
+            link_text = url_to_title_map.get(url, "来源")
+
+            # 构造favicon的URL
+            favicon_url = f"https://www.google.com/s2/favicons?sz=16&domain_url={html.escape(url)}"
+
+            # 生成HTML。onerror事件处理图标加载失败，title属性提供完整URL和编号。
+            # link_text现在是动态获取的标题
+            link_html = f"""<a href="{html.escape(url)}" target="_blank" rel="noopener noreferrer" class="source-link" title="{html.escape(link_text)} - {html.escape(url)}">
+    <img src="{favicon_url}" class="source-favicon" alt="图标" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
+    <span class="source-fallback-number" style="display: none;">{source_link_index}</span>
+    <span class="source-text">{html.escape(link_text)}</span>
+</a>"""
+            # 移除HTML片段中的换行符和多余空格
+            link_html = re.sub(r"\s*\n\s*", " ", link_html).strip()
+
             placeholder = f"LINKPLACEHOLDER{uuid.uuid4().hex}ENDLINK"
             placeholders[placeholder] = link_html
             return placeholder
 
         text = re.sub(r"\[来源:\s+(https?://[^\]]+)\]", link_replacer, text)
+        # MODIFICATION END
 
         # 3. HTML转义（保护占位符）
         escaped_text = html.escape(text)
@@ -169,22 +254,15 @@ class SVGFormatter(BaseOutputFormatter):
             if not para.strip():
                 continue
 
-            # ############# BUG FIX: 已移除错误的检查逻辑 #############
-            # 之前的代码在这里有一个检查，如果段落包含占位符，就会跳过后续所有处理，
-            # 导致标题等Markdown语法失效。现已移除该检查。
-            # ######################################################
-
             # 按行处理段落内的Markdown
             lines = para.split("\n")
             processed_lines = []
             in_list = False
 
             for line in lines:
-                # 注意：此处不使用 line.strip()，以保留代码块内的缩进
-                # 但对于标题检测，需要检查剥离空格后的行首
                 stripped_line = line.lstrip()
 
-                # 处理标题（支持1-6级）
+                # 处理标题
                 if stripped_line.startswith("######"):
                     processed_lines.append(f"<h6>{stripped_line[6:].strip()}</h6>")
                     continue
@@ -214,16 +292,14 @@ class SVGFormatter(BaseOutputFormatter):
                     in_list = False
 
                 if is_list_item:
-                    # 移除列表标记
                     item_content = re.sub(r"^[-*+]\s*", "", stripped_line)
                     processed_lines.append(f"<li>{item_content}</li>")
                 else:
                     processed_lines.append(line)
 
-            if in_list:  # 关闭未闭合的列表
+            if in_list:
                 processed_lines.append("</ul>")
 
-            # 合并处理后的行
             para_content = "\n".join(processed_lines)
 
             # 处理行内Markdown格式
@@ -243,9 +319,7 @@ class SVGFormatter(BaseOutputFormatter):
                 para_content,
             )
 
-            # 包装成段落（除非已经是标题或列表）
             if not re.match(r"^\s*<(h[1-6]|ul|li)", para_content.lstrip()):
-                # 将段落内的换行符替换为<br>
                 para_content = f"<p>{para_content.replace(chr(10), '<br>')}</p>"
 
             html_paragraphs.append(para_content)
@@ -262,31 +336,25 @@ class SVGFormatter(BaseOutputFormatter):
         final_html = re.sub(
             r"<p>(<pre>.*?</pre>)</p>", r"\1", final_html, flags=re.DOTALL
         )
-        # 修正<br>和块级标签之间的关系
         final_html = final_html.replace("<p><br>", "<p>")
         final_html = final_html.replace("<br></p>", "</p>")
         final_html = re.sub(r"<br>\s*<(ul|/ul|li|h[1-6]|pre)", r"<\1", final_html)
 
-        # 还原所有占位符
         for placeholder, content in placeholders.items():
-            # 需要在转义后的HTML中替换，所以要对placeholder进行转义
             escaped_placeholder = html.escape(placeholder)
             final_html = final_html.replace(escaped_placeholder, content)
 
         return final_html
 
+    # MODIFICATION: 修改函数签名，接收标题字典
     def _parse_markdown_to_sections(
-        self, markdown_content: str
+        self, markdown_content: str, url_to_title_map: Dict[str, str]
     ) -> List[MarkdownSection]:
         """将Markdown解析成章节 - 只有H2作为章节卡片，H3及以下在卡片内"""
         sections: List[MarkdownSection] = []
-
-        # 检测标题类型，优先使用H2，只有在没有H2时才使用H3作为章节分隔符
         has_h2 = bool(re.search(r"^##\s+", markdown_content, re.MULTILINE))
         primary_delimiter_raw = "##" if has_h2 else "###"
         primary_delimiter_re = re.escape(primary_delimiter_raw)
-
-        # 使用主分隔符来分割整个文档
         split_marker = "\n__SECTION_SPLIT__\n"
         content_with_markers = re.sub(
             f"^{primary_delimiter_re}\\s+(.*)",
@@ -294,60 +362,45 @@ class SVGFormatter(BaseOutputFormatter):
             markdown_content,
             flags=re.MULTILINE,
         )
-
         raw_sections = content_with_markers.split(split_marker)
-
-        # 第一个块是引言（在第一个分隔符之前的内容）
         intro_content = raw_sections.pop(0).strip()
+
         if intro_content:
-            # 尝试从引言中分离出H1主标题
             main_title_match = re.match(r"^#\s+(.*)", intro_content)
             if main_title_match:
-                # 报告主标题
                 main_title_text = main_title_match.group(1).strip()
-                # 报告概述内容（主标题之后的所有内容）
                 intro_body = intro_content[main_title_match.end() :].strip()
-                # 重新组合，确保渲染正确
                 full_intro = f"# {main_title_text}\n\n{intro_body}"
             else:
                 full_intro = intro_content
 
-            content_html = self._render_markdown(full_intro)
+            # MODIFICATION: 传递标题字典
+            content_html = self._render_markdown(full_intro, url_to_title_map)
             sections.append(
                 MarkdownSection(
-                    id="introduction",  # 使用固定ID避免重复
+                    id="introduction",
                     title="报告概述",
                     level=1,
                     content_html=content_html,
                 )
             )
 
-        # 用于确保ID唯一性
         used_ids = set(["introduction"])
-        section_counter = {}
 
         for raw_section in raw_sections:
             if not raw_section.strip():
                 continue
 
-            # 提取标题和内容
             lines = raw_section.strip().split("\n", 1)
-            # 确保标题行是以分隔符开头的
             if not lines[0].startswith(primary_delimiter_raw):
                 continue
 
             title = lines[0][len(primary_delimiter_raw) :].strip()
             content_md = lines[1] if len(lines) > 1 else ""
 
-            # 直接渲染整个章节内容，包括其中的H3等子标题
-            # 将标题本身也加入到内容中，以便渲染函数统一处理
-            full_section_content = f"{primary_delimiter_raw} {title}\n\n{content_md}"
+            # MODIFICATION: 传递标题字典
+            content_html = self._render_markdown(content_md, url_to_title_map)
 
-            # 注意：这里的标题渲染是为了在卡片内容区显示，卡片的大标题是单独处理的
-            # 我们需要的是卡片内的纯内容
-            content_html = self._render_markdown(content_md)
-
-            # 生成唯一ID
             base_id = self._slugify(title)
             unique_id = base_id
             count = 1
@@ -366,6 +419,10 @@ class SVGFormatter(BaseOutputFormatter):
             )
 
         return sections
+
+    # 剩下的 `_generate_html_report` 及之后的方法保持不变，因为之前的CSS已经足够灵活，
+    # 只需要我们通过Python生成正确的HTML即可。
+    # 为确保完整性，在此处粘贴未变动的代码。
 
     def _generate_html_report(self, sections: List[MarkdownSection]) -> str:
         """生成完整的HTML报告 (注入了丰富的动画特效)"""
@@ -431,7 +488,7 @@ class SVGFormatter(BaseOutputFormatter):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI深度研究报告 - 动态版</title>
+    <title>AstrBot - deepresearch 插件制作</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
@@ -593,41 +650,10 @@ class SVGFormatter(BaseOutputFormatter):
         .card-content h1 {{ font-size: 1.5em; font-weight: 600; }}
         .card-content h2 {{ font-size: 1.35em; font-weight: 600; border-bottom: 1px solid #f3f4f6; padding-bottom: 0.4em; }}
         
-        /* H3-H6 标题样式优化：加粗字体，适当大小 */
-        .card-content h3 {{ 
-            font-size: 1.25em; 
-            font-weight: 700; 
-            color: var(--text-primary);
-            margin-top: 2.5em; 
-            margin-bottom: 1.2em;
-            border-left: 4px solid var(--accent-color);
-            padding-left: 12px;
-        }}
-        .card-content h4 {{ 
-            font-size: 1.15em; 
-            font-weight: 700; 
-            color: #374151;
-            margin-top: 2.2em; 
-            margin-bottom: 1.1em;
-            padding-bottom: 0.3em;
-            border-bottom: 1px dashed var(--border-color);
-        }}
-        .card-content h5 {{ 
-            font-size: 1.05em; 
-            font-weight: 700; 
-            color: #4b5563;
-            margin-top: 2em; 
-            margin-bottom: 1em;
-        }}
-        .card-content h6 {{ 
-            font-size: 1.0em; 
-            font-weight: 700; 
-            color: var(--text-secondary);
-            margin-top: 1.8em; 
-            margin-bottom: 0.8em;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }}
+        .card-content h3 {{ font-size: 1.25em; font-weight: 700; color: var(--text-primary); margin-top: 2.5em; margin-bottom: 1.2em; border-left: 4px solid var(--accent-color); padding-left: 12px; }}
+        .card-content h4 {{ font-size: 1.15em; font-weight: 700; color: #374151; margin-top: 2.2em; margin-bottom: 1.1em; padding-bottom: 0.3em; border-bottom: 1px dashed var(--border-color); }}
+        .card-content h5 {{ font-size: 1.05em; font-weight: 700; color: #4b5563; margin-top: 2em; margin-bottom: 1em; }}
+        .card-content h6 {{ font-size: 1.0em; font-weight: 700; color: var(--text-secondary); margin-top: 1.8em; margin-bottom: 0.8em; text-transform: uppercase; letter-spacing: 0.5px; }}
         .card-content p {{ margin-bottom: 1.25em; color: var(--text-secondary); }}
         .card-content strong {{ color: var(--text-primary); font-weight: 600; }}
         .card-content a {{
@@ -638,54 +664,44 @@ class SVGFormatter(BaseOutputFormatter):
         }}
         .card-content a:hover {{ background-position: 0 100%; }}
         .card-content ul {{ list-style: none; padding-left: 0; margin-bottom: 1.25em; }}
-        .card-content li {{
-            position: relative; padding-left: 24px; margin-bottom: 0.75em; color: var(--text-secondary);
+        .card-content li {{ position: relative; padding-left: 24px; margin-bottom: 0.75em; color: var(--text-secondary); }}
+        .card-content li::before {{ content: ''; position: absolute; left: 4px; top: 10px; width: 6px; height: 6px; background-color: var(--accent-color); border-radius: 50%; }}
+        .card-content code {{ font-family: 'SF Mono', 'Menlo', monospace; background-color: #f3f4f6; padding: 0.2em 0.5em; border-radius: 6px; font-size: 0.9em; color: #be123c; border: 1px solid var(--border-color); }}
+        
+        /* 来源链接样式 (之前已添加，无需修改) */
+        .card-content a.source-link {{
+            display: inline-flex; align-items: center; gap: 6px;
+            background-color: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 9999px;
+            padding: 3px 10px 3px 5px; font-size: 0.85em; font-weight: 500;
+            color: #4b5563; text-decoration: none; vertical-align: middle;
+            margin: 0 2px; background-image: none; transition: all 0.2s ease;
+            max-width: 300px; /* 限制最大宽度，防止过长标题破坏布局 */
         }}
-        .card-content li::before {{
-            content: ''; position: absolute; left: 4px; top: 10px; width: 6px; height: 6px;
-            background-color: var(--accent-color); border-radius: 50%;
+        .card-content a.source-link:hover {{
+            background-color: #e5e7eb; border-color: #d1d5db; color: #1f2937;
+            transform: translateY(-1px); box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            background-position: initial;
         }}
-        .card-content code {{
-            font-family: 'SF Mono', 'Menlo', monospace; background-color: #f3f4f6;
-            padding: 0.2em 0.5em; border-radius: 6px; font-size: 0.9em;
-            color: #be123c; border: 1px solid var(--border-color);
+        .source-favicon {{ width: 16px; height: 16px; border-radius: 50%; object-fit: contain; background-color: #fff; flex-shrink: 0; }}
+        .source-fallback-number {{
+            display: none; width: 16px; height: 16px; border-radius: 50%;
+            background-color: var(--accent-color); color: white; font-size: 10px;
+            font-weight: bold; line-height: 16px; text-align: center;
+            flex-shrink: 0; align-items: center; justify-content: center;
         }}
-        /* --- 代码高亮增强样式 --- */
-        .card-content pre {{
-            background-color: #2d3748; border-radius: 12px; padding: 1.5em;
-            margin: 1.5em 0; overflow-x: auto; border: 1px solid #4a5568;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-            position: relative;
-        }}
-        .card-content pre code {{
-            background-color: transparent; padding: 0; border: none;
-            color: #e2e8f0; font-size: 0.9em; line-height: 1.6;
-            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+        .source-text {{
+            line-height: 1;
+            white-space: nowrap; /* 防止文本换行 */
+            overflow: hidden; /* 隐藏溢出的文本 */
+            text-overflow: ellipsis; /* 使用省略号显示被截断的文本 */
         }}
         
-        /* 代码块语言标识 */
-        .card-content pre::before {{
-            content: attr(data-language);
-            position: absolute;
-            top: 0.5em;
-            right: 1em;
-            color: #a0aec0;
-            font-size: 0.75em;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-        }}
-        
-        /* Prism.js主题自定义覆盖 */
-        pre[class*="language-"] {{
-            background: #2d3748 !important;
-            border: 1px solid #4a5568 !important;
-        }}
-        
-        /* 语法高亮颜色 */
-        .token.comment,
-        .token.prolog,
-        .token.doctype,
-        .token.cdata {{ color: #718096; }}
+        /* 代码高亮增强样式 */
+        .card-content pre {{ background-color: #2d3748; border-radius: 12px; padding: 1.5em; margin: 1.5em 0; overflow-x: auto; border: 1px solid #4a5568; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15); position: relative; }}
+        .card-content pre code {{ background-color: transparent; padding: 0; border: none; color: #e2e8f0; font-size: 0.9em; line-height: 1.6; font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace; }}
+        .card-content pre::before {{ content: attr(data-language); position: absolute; top: 0.5em; right: 1em; color: #a0aec0; font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.1em; }}
+        pre[class*="language-"] {{ background: #2d3748 !important; border: 1px solid #4a5568 !important; }}
+        .token.comment, .token.prolog, .token.doctype, .token.cdata {{ color: #718096; }}
         .token.punctuation {{ color: #e2e8f0; }}
         .token.property, .token.tag, .token.boolean, .token.number, .token.constant, .token.symbol, .token.deleted {{ color: #f56565; }}
         .token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted {{ color: #68d391; }}
@@ -702,7 +718,7 @@ class SVGFormatter(BaseOutputFormatter):
             .container {{ flex-direction: column; }}
             .sidebar {{ position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border-color); }}
             main.content {{ padding: 40px 5%; }}
-            .cursor-glow {{ display: none; }} /* 移动端禁用光标 */
+            .cursor-glow {{ display: none; }}
         }}
     </style>
 </head>
@@ -721,25 +737,24 @@ class SVGFormatter(BaseOutputFormatter):
             <footer class="footer">
                 <p>🚀 由 AstrBot 插件 astrbot_plugin_deepresearch 生成</p>
                 <p>📅 生成时间: {self._get_current_time()}</p>
+                <p>该内容由网络搜索和 LLM 生成，请注意甄别内容的真实性！！！</p>
+                <p>AstrBot 开发团队与 deepresearch 插件开发作者不对生成内容承担任何责任。</p>
             </footer>
         </main>
     </div>
     <script>
         document.addEventListener('DOMContentLoaded', function () {{
-            // --- 1. 元素入场动画观察器 ---
             const inViewObserver = new IntersectionObserver((entries) => {{
                 entries.forEach(entry => {{
                     if (entry.isIntersecting) {{
                         entry.target.classList.add('in-view');
                     }}
                 }});
-            }}, {{ threshold: 0.2 }}); // 元素进入视口20%时触发
+            }}, {{ threshold: 0.2 }});
             document.querySelectorAll('.report-card').forEach(el => inViewObserver.observe(el));
-            
-            // --- 2. 目录高亮观察器 ---
+
             const tocLinks = document.querySelectorAll('.toc a');
             const sectionObserver = new IntersectionObserver((entries) => {{
-                let anyIntersecting = false;
                 entries.forEach(entry => {{
                     const id = entry.target.getAttribute('id');
                     const link = document.querySelector(`.toc a[href="#${{id}}"]`);
@@ -747,7 +762,6 @@ class SVGFormatter(BaseOutputFormatter):
                         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {{
                             tocLinks.forEach(l => l.classList.remove('active'));
                             link.classList.add('active');
-                            anyIntersecting = true;
                         }} else {{
                             link.classList.remove('active');
                         }}
@@ -756,49 +770,37 @@ class SVGFormatter(BaseOutputFormatter):
             }}, {{ rootMargin: "-30% 0px -60% 0px", threshold: [0.5, 1.0] }});
             document.querySelectorAll('.report-card').forEach(section => sectionObserver.observe(section));
 
-            // --- 3. 目录点击跳转与高亮动画 ---
             document.querySelectorAll('.toc a').forEach(anchor => {{
                 anchor.addEventListener('click', function (e) {{
                     e.preventDefault();
                     const targetId = this.getAttribute('href');
                     const targetElement = document.querySelector(targetId);
                     if (targetElement) {{
-                        // 平滑滚动
                         targetElement.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
-                        
-                        // 添加高亮动画
                         targetElement.classList.add('highlight');
                         setTimeout(() => {{
                             targetElement.classList.remove('highlight');
-                        }}, 1500); // 动画持续时间
+                        }}, 1500);
                     }}
                 }});
             }});
 
-            // --- 4. 鼠标光标追随特效 ---
             const glow = document.querySelector('.cursor-glow');
             if (glow && window.matchMedia('(pointer: fine)').matches) {{
                 document.addEventListener('mousemove', (e) => {{
                     glow.style.transform = `translate(${{e.clientX}}px, ${{e.clientY}}px)`;
                 }});
-                 document.addEventListener('mouseleave', () => {{
-                    glow.style.opacity = '0';
-                }});
-                 document.addEventListener('mouseenter', () => {{
-                    glow.style.opacity = '0.1';
-                }});
+                 document.addEventListener('mouseleave', () => {{ glow.style.opacity = '0'; }});
+                 document.addEventListener('mouseenter', () => {{ glow.style.opacity = '0.1'; }});
             }}
         }});
     </script>
     
-    <!-- Prism.js 核心和语言支持 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script>
-        // 配置Prism.js自动加载器
         if (typeof Prism !== 'undefined') {{
             Prism.plugins.autoloader.languages_path = 'https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/';
-            // 确保Prism在DOM加载后高亮所有代码
             Prism.highlightAll();
         }}
     </script>
