@@ -91,11 +91,11 @@
 # 🔍 简单搜索
 /deepresearch 人工智能的未来发展趋势
 
-# 📝 Markdown格式输出
-/deepresearch Python编程最佳实践 --format=markdown
+# image格式输出
+/deepresearch Python编程最佳实践 image
 
-# 🌐 HTML格式输出  
-/deepresearch 区块链技术应用 --format=html
+# HTML格式输出  
+/deepresearch 区块链技术应用 html
 ```
 
 ### 🎯 高级功能
