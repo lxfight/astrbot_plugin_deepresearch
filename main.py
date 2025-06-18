@@ -706,25 +706,14 @@ class DeepResearchPlugin(Star):
                         ]
                     )
                 elif actual_format == "html":
-                    # HTML格式：返回HTML内容
-                    yield event.plain_result(
-                        status_msg + f"\n为您生成了HTML格式报告：\n\n{report_result}"
-                    )
-                elif actual_format == "markdown":
-                    # Markdown格式：返回Markdown内容
-                    yield event.plain_result(
-                        status_msg
-                        + f"\n为您生成了Markdown格式报告：\n\n{report_result}"
-                    )
-                elif actual_format == "svg":
-                    # SVG格式：使用File组件发送HTML文件
+                    # HTML格式：使用File组件发送HTML文件
                     import os
 
                     filename = os.path.basename(report_result)
                     yield event.chain_result(
                         [
                             Comp.Plain(
-                                text=status_msg + "\n为您生成了SVG增强版HTML报告："
+                                text=status_msg + "\n为您生成了HTML报告："
                             ),
                             Comp.File(name=filename, file=report_result),
                         ]
@@ -752,20 +741,12 @@ class DeepResearchPlugin(Star):
             logger.error(f"Pipeline error for query '{query}': {e}", exc_info=True)
 
     @filter.command("deepresearch", alias={"研究", "深度研究"})
-    async def handle_research_command(self, event: AstrMessageEvent, query: str = ""):
+    async def handle_research_command(
+        self, event: AstrMessageEvent, query: str = "", output_format: str = "image"
+    ):
         """
-        指令: /deepresearch <查询内容> [--format=输出格式]
+        指令: /deepresearch <查询内容> [输出格式]
         对指定内容进行多阶段深度研究并生成报告。
-
-        支持的输出格式:
-        - image (默认): 图片格式报告
-        - markdown: Markdown文本格式
-        - html: HTML格式
-
-        示例:
-        /deepresearch 人工智能发展趋势
-        /deepresearch 人工智能发展趋势 --format=markdown
-        /deepresearch 人工智能发展趋势 --format=html
         """
         if not query:
             available_formats = self.output_manager.get_available_formats()
@@ -778,36 +759,27 @@ class DeepResearchPlugin(Star):
 
             yield event.plain_result(
                 f"请输入要研究的内容。\n\n"
-                f"用法: /deepresearch <查询内容> [--format=输出格式]\n\n"
+                f"用法: /deepresearch <查询内容> [输出格式]\n\n"
                 f"支持的输出格式:\n{formats_text}\n\n"
                 f"示例:\n"
                 f"  /deepresearch 人工智能的未来发展趋势\n"
-                f"  /deepresearch Python编程 --format=markdown\n"
-                f"  /deepresearch 区块链技术 --format=html"
+                f"  /deepresearch Python编程 markdown\n"
+                f"  /deepresearch 区块链技术 html"
             )
             return
 
-        # 解析查询和输出格式参数
-        output_format = None
-        if " --format=" in query:
-            parts = query.split(" --format=")
-            if len(parts) == 2:
-                query = parts[0].strip()
-                output_format = parts[1].strip()
+        # 验证输出格式是否支持
+        if not self.output_manager.is_format_supported(output_format):
+            available_formats = [
+                fmt["name"] for fmt in self.output_manager.get_available_formats()
+            ]
+            yield event.plain_result(
+                f"❌ 不支持的输出格式: '{output_format}'\n"
+                f"支持的格式: {', '.join(available_formats)}"
+            )
+            return
 
-                # 验证输出格式是否支持
-                if not self.output_manager.is_format_supported(output_format):
-                    available_formats = [
-                        fmt["name"]
-                        for fmt in self.output_manager.get_available_formats()
-                    ]
-                    yield event.plain_result(
-                        f"❌ 不支持的输出格式: '{output_format}'\n"
-                        f"支持的格式: {', '.join(available_formats)}"
-                    )
-                    return
-
-                logger.info(f"用户指定输出格式: {output_format}")
+        logger.info(f"用户指定输出格式: {output_format}")
 
         # 使用异步生成器模式，逐个 yield 消息
         async for message_result in self._run_research_pipeline(

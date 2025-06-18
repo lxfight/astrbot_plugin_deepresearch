@@ -29,7 +29,7 @@ class SVGFormatter(BaseOutputFormatter):
 
     @property
     def format_name(self) -> str:
-        return "svg"
+        return "html"
 
     @property
     def description(self) -> str:
@@ -534,7 +534,7 @@ class SVGFormatter(BaseOutputFormatter):
             transform: translate(-50%, -50%);
             transition: transform 0.1s ease-out, opacity 0.3s;
         }}
-        
+
         /* --- 布局 --- */
         .container {{ display: flex; max-width: 1600px; margin: 0 auto; }}
         .sidebar {{
