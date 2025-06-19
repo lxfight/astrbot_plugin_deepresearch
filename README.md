@@ -211,12 +211,8 @@ graph TD
 11
 <div align="center">
 
-<<<<<<< HEAD
 ### 🌟 如果这个项目对您有帮助，请考虑给一个 Star ⭐
   
-=======
-**Made with ❤️ for the Open Source Community**
->>>>>>> d7d47620035d509d858de082fa8432e4c4c5a124
 
 ### 如果这个项目对您有帮助，请给一个 Star ⭐ 支持我们！
 
