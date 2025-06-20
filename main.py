@@ -712,9 +712,7 @@ class DeepResearchPlugin(Star):
                     filename = os.path.basename(report_result)
                     yield event.chain_result(
                         [
-                            Comp.Plain(
-                                text=status_msg + "\n为您生成了HTML报告："
-                            ),
+                            Comp.Plain(text=status_msg + "\n为您生成了HTML报告："),
                             Comp.File(name=filename, file=report_result),
                         ]
                     )

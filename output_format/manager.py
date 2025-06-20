@@ -91,4 +91,4 @@ class OutputFormatManager:
 
     def get_default_format(self) -> str:
         """获取默认输出格式"""
-        return self.config.get("default_format", "image")
+        return self.config.get("default_output_format", "image")
