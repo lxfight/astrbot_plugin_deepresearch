@@ -72,11 +72,7 @@ class DeepResearchPlugin(Star):
         self.max_terms: int = self.config.get("max_terms_to_search", 3)
         engine_config = self.config.get("engine_config", {})
 
-        # 初始化输出格式管理器
-        output_config = {
-            "default_format": self.config.get("default_output_format", "image")
-        }
-        self.output_manager = OutputFormatManager(output_config)
+        self.output_manager = OutputFormatManager()
 
         asyncio.create_task(self.initialize_engine(engine_config))
         logger.info("DeepResearchPlugin 初始化完成，HTTP 客户端已创建。")
@@ -691,8 +687,8 @@ class DeepResearchPlugin(Star):
             duration = round(end_time - start_time, 2)
 
             # 获取实际使用的输出格式
-            actual_format = output_format or self.output_manager.get_default_format()
-
+            actual_format = output_format or self.config.get("default_output_format", "image")
+            logger.debug(f"实际使用的输出格式: {actual_format}")
             # 最终输出
             status_msg = f"✅ 深度研究完成！总耗时: {duration} 秒。"
 

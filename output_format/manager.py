@@ -88,7 +88,3 @@ class OutputFormatManager:
     def is_format_supported(self, format_name: str) -> bool:
         """检查是否支持指定格式"""
         return format_name in self.formatters
-
-    def get_default_format(self) -> str:
-        """获取默认输出格式"""
-        return self.config.get("default_output_format", "image")
