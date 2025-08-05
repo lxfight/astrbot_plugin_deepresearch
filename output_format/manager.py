@@ -6,8 +6,7 @@ from astrbot.api.star import Star
 from astrbot.api import logger
 
 from .base import BaseOutputFormatter
-from .formatters import ImageFormatter, MarkdownFormatter, HTMLFormatter
-from .svg_formatter import SVGFormatter
+from .formatters import ImageFormatter, HTMLFormatter
 
 
 class OutputFormatManager:
@@ -20,7 +19,7 @@ class OutputFormatManager:
 
     def _initialize_formatters(self):
         """初始化所有格式化器"""
-        formatter_classes = [ImageFormatter, MarkdownFormatter, HTMLFormatter, SVGFormatter]
+        formatter_classes = [ImageFormatter, HTMLFormatter]
 
         for formatter_class in formatter_classes:
             try:
@@ -52,14 +51,16 @@ class OutputFormatManager:
         markdown_content: str,
         format_name: str = "image",
         star_instance: Star = None,
+        is_html_content: bool = False,
     ) -> Optional[Any]:
         """
         格式化报告
 
         Args:
-            markdown_content: Markdown格式的报告内容
+            markdown_content: 报告内容（Markdown或HTML格式）
             format_name: 输出格式名称
             star_instance: Star实例，用于某些格式化器
+            is_html_content: 标识内容是否已经是HTML格式
 
         Returns:
             格式化后的内容
@@ -71,7 +72,16 @@ class OutputFormatManager:
 
         try:
             logger.info(f"[OutputFormat] 使用格式化器 {format_name} 处理报告")
-            result = await formatter.format_report(markdown_content, star_instance)
+            
+            # 传递额外参数给格式化器
+            if hasattr(formatter, 'format_report') and hasattr(formatter.format_report, '__code__'):
+                # 检查格式化器的format_report方法是否支持is_html_content参数
+                if 'is_html_content' in formatter.format_report.__code__.co_varnames:
+                    result = await formatter.format_report(markdown_content, star_instance, is_html_content)
+                else:
+                    result = await formatter.format_report(markdown_content, star_instance)
+            else:
+                result = await formatter.format_report(markdown_content, star_instance)
 
             if result:
                 logger.info(f"[OutputFormat] 格式化成功: {format_name}")
@@ -88,3 +98,7 @@ class OutputFormatManager:
     def is_format_supported(self, format_name: str) -> bool:
         """检查是否支持指定格式"""
         return format_name in self.formatters
+
+    def get_default_format(self) -> str:
+        """获取默认输出格式"""
+        return self.config.get("default_output_format", "image")

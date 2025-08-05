@@ -101,33 +101,6 @@ class ImageFormatter(BaseOutputFormatter):
             return None
 
 
-class MarkdownFormatter(BaseOutputFormatter):
-    """Markdown格式化器 - 返回原始Markdown文本"""
-
-    @property
-    def format_name(self) -> str:
-        return "markdown"
-
-    @property
-    def description(self) -> str:
-        return "原始Markdown格式文本"
-
-    @property
-    def file_extension(self) -> str:
-        return ".md"
-
-    async def format_report(
-        self, markdown_content: str, star_instance: Star = None
-    ) -> Optional[str]:
-        """返回原始Markdown内容"""
-        if not self.validate_content(markdown_content):
-            logger.warning("[MarkdownFormatter] Markdown内容为空")
-            return None
-
-        logger.info("[MarkdownFormatter] 返回原始Markdown文本")
-        return markdown_content
-
-
 class HTMLFormatter(BaseOutputFormatter):
     """HTML格式化器 - 将Markdown转换为HTML"""
 
@@ -144,25 +117,29 @@ class HTMLFormatter(BaseOutputFormatter):
         return ".html"
 
     async def format_report(
-        self, markdown_content: str, star_instance: Star = None
+        self, markdown_content: str, star_instance: Star = None, is_html_content: bool = False
     ) -> Optional[str]:
-        """将Markdown内容转换为完整的HTML"""
+        """将Markdown内容转换为完整的HTML，或处理已有的HTML内容"""
         if not self.validate_content(markdown_content):
-            logger.warning("[HTMLFormatter] Markdown内容为空")
+            logger.warning("[HTMLFormatter] 内容为空")
             return None
 
         try:
-            # 1. Markdown 转 HTML
-            html_body = markdown.markdown(
-                markdown_content, extensions=["extra", "codehilite", "tables", "toc"]
-            )
-
-            # 2. 填充模板
-            full_html = HTML_REPORT_TEMPLATE.format(content=html_body)
+            if is_html_content:
+                # 如果内容已经是HTML格式，直接使用模板包装
+                logger.info("[HTMLFormatter] 处理已有的HTML内容")
+                full_html = HTML_REPORT_TEMPLATE.format(content=markdown_content)
+            else:
+                # 如果是Markdown格式，先转换为HTML
+                logger.info("[HTMLFormatter] 将Markdown转换为HTML")
+                html_body = markdown.markdown(
+                    markdown_content, extensions=["extra", "codehilite", "tables", "toc"]
+                )
+                full_html = HTML_REPORT_TEMPLATE.format(content=html_body)
 
             logger.info("[HTMLFormatter] HTML报告生成成功")
             return full_html
 
         except Exception as e:
-            logger.error(f"[HTMLFormatter] 转换HTML时发生错误: {e}", exc_info=True)
+            logger.error(f"[HTMLFormatter] 处理HTML时发生错误: {e}", exc_info=True)
             return None

@@ -24,7 +24,6 @@ from .config import (
 from .search_engine_lib.models import SearchQuery, SearchResponse, SearchResultItem
 from .search_engine_lib.base import BaseSearchEngine
 from .search_engine_lib import initialize, list_engines, get_engine
-from .url_resolver import URLResolverManager
 from .output_format import OutputFormatManager
 
 from .core.constants import (
@@ -72,7 +71,7 @@ class DeepResearchPlugin(Star):
         self.max_terms: int = self.config.get("max_terms_to_search", 3)
         engine_config = self.config.get("engine_config", {})
 
-        self.output_manager = OutputFormatManager()
+        self.output_manager = OutputFormatManager(self.config)
 
         asyncio.create_task(self.initialize_engine(engine_config))
         logger.info("DeepResearchPlugin 初始化完成，HTTP 客户端已创建。")
@@ -518,11 +517,13 @@ class DeepResearchPlugin(Star):
         query: str,
         expansion_questions: List[str],
         summaries: List[Dict[str, str]],
+        output_format: str = "image",
     ) -> Optional[str]:
-        """阶段三：LLM 聚合分析所有摘要，生成 Markdown 报告"""
-        logger.info("阶段三：开始聚合分析所有摘要...")
+        """阶段三：LLM 聚合分析所有摘要，根据输出格式生成相应内容"""
+        logger.info(f"阶段三：开始聚合分析所有摘要，目标格式: {output_format}...")
         if not summaries:
             return "未能从任何来源获取有效摘要，无法生成报告。"
+        
         # 准备 LLM 输入
         summaries_input = "\n\n".join(
             [f"### 来源: {item['url']}\n{item['summary']}\n---" for item in summaries]
@@ -532,32 +533,57 @@ class DeepResearchPlugin(Star):
             if expansion_questions
             else "无"
         )
-        system_prompt = f"""
-        你是一个高级研究分析师。你的任务是综合来自多个来源的摘要信息，生成一份结构清晰、内容连贯、逻辑严密的深度研究报告（Markdown 格式）。
+        
+        # 根据输出格式选择不同的提示词
+        if output_format == "html":
+            system_prompt = f"""
+            你是一个高级研究分析师。你的任务是综合来自多个来源的摘要信息，生成一份精美的HTML格式深度研究报告。
 
-        原始查询: "{query}"
+            原始查询: "{query}"
 
-        需要额外考虑和回答的扩展问题:
-        {expansion_q_str}
-        报告要求：
-        1. 格式：使用标准的 Markdown 语法。
-        2. 结构：应包含标题、引言、主体段落（可以按主题或扩展问题分节）、结论。
-        3. 内容：综合所有来源的信息，对比不同观点（如果存在），整合信息，构建逻辑。
-        4. 引用：在引用了某个来源信息的句子或段落末尾，明确标注来源，格式为 ` [来源: URL]`。
-        5. 目标：全面、深入地回答原始查询及扩展问题。
-        6. 输出：直接输出 Markdown 报告正文，不要包含任何额外的解释或问候语。
-        """
-        prompt = f"请根据以下来自不同来源的摘要信息，生成一份关于 “{query}” 的深度研究报告：\n\n{summaries_input}"
-        report_markdown = await self._call_llm(provider, prompt, system_prompt)
-        if report_markdown:
-            logger.info("阶段三：聚合分析完成，Markdown 报告已生成。")
+            需要额外考虑和回答的扩展问题:
+            {expansion_q_str}
+            
+            报告要求：
+            1. 格式：直接生成完整的HTML内容（包含body内的内容，不需要html、head标签）。
+            2. 样式：使用内联CSS样式，确保报告美观、专业。
+            3. 结构：应包含标题、引言、主体段落（可以按主题或扩展问题分节）、结论。
+            4. 内容：综合所有来源的信息，对比不同观点（如果存在），整合信息，构建逻辑。
+            5. 引用：在引用了某个来源信息的句子或段落末尾，明确标注来源，格式为 `<a href="URL" style="color: #007bff; text-decoration: none;">[来源链接]</a>`。
+            6. 目标：全面、深入地回答原始查询及扩展问题。
+            7. 输出：直接输出HTML报告内容，不要包含任何额外的解释或问候语。
+            8. 配色：使用专业的配色方案，标题用深蓝色(#0056b3)，正文用深灰色(#333)。
+            """
+        else:
+            # 默认生成Markdown格式（用于image格式）
+            system_prompt = f"""
+            你是一个高级研究分析师。你的任务是综合来自多个来源的摘要信息，生成一份结构清晰、内容连贯、逻辑严密的深度研究报告（Markdown 格式）。
+
+            原始查询: "{query}"
+
+            需要额外考虑和回答的扩展问题:
+            {expansion_q_str}
+            报告要求：
+            1. 格式：使用标准的 Markdown 语法。
+            2. 结构：应包含标题、引言、主体段落（可以按主题或扩展问题分节）、结论。
+            3. 内容：综合所有来源的信息，对比不同观点（如果存在），整合信息，构建逻辑。
+            4. 引用：在引用了某个来源信息的句子或段落末尾，明确标注来源，格式为 ` [来源: URL]`。
+            5. 目标：全面、深入地回答原始查询及扩展问题。
+            6. 输出：直接输出 Markdown 报告正文，不要包含任何额外的解释或问候语。
+            """
+        
+        prompt = f"请根据以下来自不同来源的摘要信息，生成一份关于 \"{query}\" 的深度研究报告：\n\n{summaries_input}"
+        report_content = await self._call_llm(provider, prompt, system_prompt)
+        
+        if report_content:
+            logger.info(f"阶段三：聚合分析完成，{output_format}格式报告已生成。")
         else:
             logger.warning("阶段三：聚合分析失败。")
-        return report_markdown
+        return report_content
 
     # ------------------ 阶段四：报告生成与交付 (Report Generation & Delivery) ------------------
     async def _stage4_report_generation(
-        self, markdown_text: str, output_format: str = None
+        self, report_content: str, output_format: str = None
     ) -> Optional[Any]:
         """阶段四：使用输出格式管理器生成报告"""
         if not output_format:
@@ -566,12 +592,22 @@ class DeepResearchPlugin(Star):
         logger.info(f"阶段四：开始生成 {output_format} 格式报告...")
 
         try:
-            # 使用输出格式管理器格式化报告
-            result = await self.output_manager.format_report(
-                markdown_content=markdown_text,
-                format_name=output_format,
-                star_instance=self,  # 传递Star实例用于图片渲染
-            )
+            # 如果输出格式是HTML且内容已经是HTML格式，直接使用HTML格式化器
+            if output_format == "html":
+                # 对于HTML格式，直接使用生成的内容
+                result = await self.output_manager.format_report(
+                    markdown_content=report_content,
+                    format_name=output_format,
+                    star_instance=self,
+                    is_html_content=True,  # 标识内容已经是HTML格式
+                )
+            else:
+                # 对于image格式，内容应该是Markdown格式
+                result = await self.output_manager.format_report(
+                    markdown_content=report_content,
+                    format_name=output_format,
+                    star_instance=self,
+                )
 
             if result:
                 logger.info(f"阶段四：{output_format} 格式报告生成成功。")
@@ -669,10 +705,11 @@ class DeepResearchPlugin(Star):
                 )
 
             # 阶段三 - 聚合
-            aggregated_markdown = await self._stage3_aggregation(
-                provider, query, parsed_query.get("expansion_questions", []), summaries
+            actual_format = output_format or self.config.get("default_output_format", "image")
+            aggregated_content = await self._stage3_aggregation(
+                provider, query, parsed_query.get("expansion_questions", []), summaries, actual_format
             )
-            if not aggregated_markdown:
+            if not aggregated_content:
                 yield event.plain_result("❌ 阶段三失败：LLM内容聚合分析失败。")
                 return
             yield event.plain_result(
@@ -680,14 +717,12 @@ class DeepResearchPlugin(Star):
             )
             # 阶段四
             report_result = await self._stage4_report_generation(
-                aggregated_markdown, output_format
+                aggregated_content, actual_format
             )
 
             end_time = asyncio.get_running_loop().time()
             duration = round(end_time - start_time, 2)
 
-            # 获取实际使用的输出格式
-            actual_format = output_format or self.config.get("default_output_format", "image")
             logger.debug(f"实际使用的输出格式: {actual_format}")
             # 最终输出
             status_msg = f"✅ 深度研究完成！总耗时: {duration} 秒。"
@@ -719,11 +754,11 @@ class DeepResearchPlugin(Star):
                         + f"\n为您生成了{actual_format}格式报告：\n\n{report_result}"
                     )
             else:
-                # 报告生成失败，回退到原始Markdown
+                # 报告生成失败，回退到原始内容
                 yield event.plain_result(
                     status_msg
-                    + f"\n⚠️ {actual_format}格式报告生成失败，以下为原始 Markdown 报告：\n---\n"
-                    + aggregated_markdown
+                    + f"\n⚠️ {actual_format}格式报告生成失败，以下为原始内容：\n---\n"
+                    + aggregated_content
                 )
         except asyncio.TimeoutError:
             yield event.plain_result("❌ 研究过程超时。")

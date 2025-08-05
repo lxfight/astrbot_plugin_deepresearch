@@ -21,20 +21,10 @@ SUPPORTED_OUTPUT_FORMATS = {
         "description": "将Markdown报告渲染为图片",
         "extension": ".png"
     },
-    "markdown": {
-        "name": "Markdown文本",
-        "description": "原始Markdown格式文本",
-        "extension": ".md"
-    },
     "html": {
         "name": "HTML页面",
         "description": "HTML格式报告",
         "extension": ".html"
-    },
-    "pdf": {
-        "name": "PDF文档",
-        "description": "PDF格式报告(未来支持)",
-        "extension": ".pdf"
     }
 }
 

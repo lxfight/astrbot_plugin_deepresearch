@@ -5,7 +5,6 @@ from .base import BaseOutputFormatter
 from .manager import OutputFormatManager
 from .formatters import (
     ImageFormatter,
-    MarkdownFormatter,
     HTMLFormatter
 )
 
@@ -13,6 +12,5 @@ __all__ = [
     "BaseOutputFormatter",
     "OutputFormatManager", 
     "ImageFormatter",
-    "MarkdownFormatter",
     "HTMLFormatter"
 ]
